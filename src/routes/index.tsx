@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSymbolPrices } from "@/lib/tse.functions";
+import { getSymbolPricesClient } from "@/lib/tse-client";
 import {
   ALL_SYMBOLS,
   DEFAULT_SETTINGS,
