@@ -1,5 +1,6 @@
 // موتور استراتژی چرخش — سمت کاربر
-// وضعیت هر جفت در localStorage ذخیره می‌شود.
+// از قیمت‌های bid/ask استفاده می‌شود (خرید در ask، فروش در bid).
+// پارامترها از طریق getSettings() قابل تغییرند و در localStorage ذخیره می‌شوند.
 
 export type Sample = { t: number; a: number; b: number; ratio: number };
 
@@ -7,8 +8,8 @@ export type Trade = {
   t: number;
   from: "A" | "B";
   to: "A" | "B";
-  sellPrice: number;
-  buyPrice: number;
+  sellPrice: number; // bid صندوقی که فروخته شد
+  buyPrice: number; // ask صندوقی که خریده شد
   unitsSold: number;
   grossSale: number;
   commission: number;
@@ -16,19 +17,25 @@ export type Trade = {
   newUnits: number;
 };
 
+export type PriceQuote = {
+  last?: number;
+  bid?: number;
+  ask?: number;
+};
+
 export type PairState = {
   id: string;
   symbolA: string;
   symbolB: string;
-  samples: Sample[]; // آخرین N نمونه (برای MA20)
-  holding: "A" | "B" | null; // پوزیشن فعلی
-  units: number; // تعداد واحد صندوقِ نگه‌داشته‌شده
-  cashCapital: number; // سرمایه‌ی پایه (شروع) — برای گزارش
+  samples: Sample[];
+  holding: "A" | "B" | null;
+  units: number;
+  cashCapital: number;
   startCapital: number;
-  startUnitsA: number; // برای محاسبه‌ی «واحد معادل A»
+  startUnitsA: number;
   trades: Trade[];
-  lastPriceA?: number;
-  lastPriceB?: number;
+  lastQuoteA?: PriceQuote;
+  lastQuoteB?: PriceQuote;
 };
 
 export type PairConfig = { id: string; symbolA: string; symbolB: string; label: string };
@@ -44,29 +51,60 @@ export const ALL_SYMBOLS = Array.from(
   new Set(PAIRS.flatMap((p) => [p.symbolA, p.symbolB])),
 );
 
-export const MA_WINDOW = 20;
-export const BAND = 0.004; // ۰.۴٪
-export const FEE = 0.0024; // ۰.۲۴٪ کارمزد فروش
-export const START_CAPITAL = 50_000_000; // ۵۰ میلیون تومان
-export const SAMPLE_INTERVAL_MS = 5 * 60 * 1000; // ۵ دقیقه — دوره نمونه‌گیری منطقی
-export const POLL_INTERVAL_MS = 30_000; // هر ۳۰ ثانیه از سرور می‌گیریم
-const MAX_SAMPLES = 500;
+// ---- تنظیمات قابل تغییر ----
+export type Settings = {
+  maWindow: number;
+  bandPct: number; // درصد (مثلاً 0.4 برای ۰.۴٪)
+  feePct: number; // درصد (مثلاً 0.24)
+  startCapital: number;
+  sampleIntervalSec: number;
+  pollIntervalSec: number;
+  useBidAsk: boolean; // اگر false، از last استفاده می‌کند
+};
 
-const KEY = (id: string) => `rot-pair-v1:${id}`;
+export const DEFAULT_SETTINGS: Settings = {
+  maWindow: 20,
+  bandPct: 0.4,
+  feePct: 0.24,
+  startCapital: 50_000_000,
+  sampleIntervalSec: 300, // ۵ دقیقه
+  pollIntervalSec: 30,
+  useBidAsk: true,
+};
 
-export function loadPair(cfg: PairConfig): PairState {
-  if (typeof window === "undefined") return freshPair(cfg);
+const SETTINGS_KEY = "rot-settings-v1";
+
+export function loadSettings(): Settings {
+  if (typeof window === "undefined") return DEFAULT_SETTINGS;
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {}
+  return DEFAULT_SETTINGS;
+}
+
+export function saveSettings(s: Settings) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {}
+}
+
+const MAX_SAMPLES = 1000;
+const KEY = (id: string) => `rot-pair-v2:${id}`;
+
+export function loadPair(cfg: PairConfig, startCapital: number): PairState {
+  if (typeof window === "undefined") return freshPair(cfg, startCapital);
   try {
     const raw = window.localStorage.getItem(KEY(cfg.id));
     if (raw) {
       const s = JSON.parse(raw) as PairState;
-      // migration guards
       s.samples = s.samples ?? [];
       s.trades = s.trades ?? [];
       return s;
     }
   } catch {}
-  return freshPair(cfg);
+  return freshPair(cfg, startCapital);
 }
 
 export function savePair(s: PairState) {
@@ -76,13 +114,13 @@ export function savePair(s: PairState) {
   } catch {}
 }
 
-export function resetPair(cfg: PairConfig): PairState {
-  const s = freshPair(cfg);
+export function resetPair(cfg: PairConfig, startCapital: number): PairState {
+  const s = freshPair(cfg, startCapital);
   savePair(s);
   return s;
 }
 
-function freshPair(cfg: PairConfig): PairState {
+function freshPair(cfg: PairConfig, startCapital: number): PairState {
   return {
     id: cfg.id,
     symbolA: cfg.symbolA,
@@ -90,25 +128,40 @@ function freshPair(cfg: PairConfig): PairState {
     samples: [],
     holding: null,
     units: 0,
-    cashCapital: START_CAPITAL,
-    startCapital: START_CAPITAL,
+    cashCapital: startCapital,
+    startCapital,
     startUnitsA: 0,
     trades: [],
   };
 }
 
-/** نمونه‌ی جدید را اضافه می‌کند اگر حداقل SAMPLE_INTERVAL_MS از آخرین نمونه گذشته باشد. */
-export function addSample(s: PairState, a: number, b: number, now: number): boolean {
-  s.lastPriceA = a;
-  s.lastPriceB = b;
+/** قیمت مرجع برای محاسبه‌ی Ratio: میانگین bid/ask اگر موجود، وگرنه last. */
+export function midPrice(q: PriceQuote | undefined, useBidAsk: boolean): number | null {
+  if (!q) return null;
+  if (useBidAsk && q.bid && q.ask) return (q.bid + q.ask) / 2;
+  return q.last || null;
+}
+
+export function addSample(
+  s: PairState,
+  qa: PriceQuote,
+  qb: PriceQuote,
+  now: number,
+  settings: Settings,
+): boolean {
+  s.lastQuoteA = qa;
+  s.lastQuoteB = qb;
+  const a = midPrice(qa, settings.useBidAsk);
+  const b = midPrice(qb, settings.useBidAsk);
+  if (!a || !b) return false;
   const last = s.samples[s.samples.length - 1];
-  if (last && now - last.t < SAMPLE_INTERVAL_MS) return false;
+  if (last && now - last.t < settings.sampleIntervalSec * 1000) return false;
   s.samples.push({ t: now, a, b, ratio: a / b });
   if (s.samples.length > MAX_SAMPLES) s.samples.splice(0, s.samples.length - MAX_SAMPLES);
   return true;
 }
 
-export function computeMA(samples: Sample[], window = MA_WINDOW): number | null {
+export function computeMA(samples: Sample[], window: number): number | null {
   if (samples.length < window) return null;
   const slice = samples.slice(-window);
   return slice.reduce((acc, s) => acc + s.ratio, 0) / slice.length;
@@ -116,42 +169,63 @@ export function computeMA(samples: Sample[], window = MA_WINDOW): number | null 
 
 export function evaluateSignal(
   s: PairState,
-  band = BAND,
+  settings: Settings,
 ): "buyA" | "buyB" | "hold" | "wait" {
-  const ma = computeMA(s.samples);
+  const ma = computeMA(s.samples, settings.maWindow);
   const last = s.samples[s.samples.length - 1];
   if (!ma || !last) return "wait";
   const dev = last.ratio / ma - 1;
-  if (dev > band) return "buyB"; // نسبت بالاست → A گران است → به B رو
+  const band = settings.bandPct / 100;
+  if (dev > band) return "buyB";
   if (dev < -band) return "buyA";
   return "hold";
 }
 
-/** اجرای معامله در قیمت لحظه‌ای. اولین ورود از حالت flat کارمزد ندارد. */
-export function executeSignal(s: PairState, priceA: number, priceB: number, now: number) {
-  const sig = evaluateSignal(s);
+/** قیمت خرید = ask هدف؛ قیمت فروش = bid موجودی. اگر bid/ask نداشتیم، از last استفاده می‌شود. */
+function priceForBuy(q: PriceQuote | undefined, useBidAsk: boolean): number {
+  if (!q) return 0;
+  if (useBidAsk && q.ask) return q.ask;
+  return q.last || q.bid || 0;
+}
+function priceForSell(q: PriceQuote | undefined, useBidAsk: boolean): number {
+  if (!q) return 0;
+  if (useBidAsk && q.bid) return q.bid;
+  return q.last || q.ask || 0;
+}
+
+export function executeSignal(s: PairState, now: number, settings: Settings) {
+  const sig = evaluateSignal(s, settings);
   if (sig === "wait" || sig === "hold") return;
   const target: "A" | "B" = sig === "buyA" ? "A" : "B";
   if (s.holding === target) return;
 
-  // مقداردهی اولیه‌ی واحد معادل A
-  if (s.startUnitsA === 0) s.startUnitsA = s.startCapital / priceA;
+  const buyQuote = target === "A" ? s.lastQuoteA : s.lastQuoteB;
+  const sellQuote =
+    s.holding === "A" ? s.lastQuoteA : s.holding === "B" ? s.lastQuoteB : undefined;
 
-  const sellPrice = s.holding === "A" ? priceA : s.holding === "B" ? priceB : 0;
-  const buyPrice = target === "A" ? priceA : priceB;
+  const buyPrice = priceForBuy(buyQuote, settings.useBidAsk);
+  const sellPrice = sellQuote ? priceForSell(sellQuote, settings.useBidAsk) : 0;
+  if (!buyPrice) return;
+  if (s.holding !== null && !sellPrice) return;
 
+  // مقداردهی اولیه‌ی واحد معادل A (بر مبنای mid یا ask A)
+  if (s.startUnitsA === 0) {
+    const pa = priceForBuy(s.lastQuoteA, settings.useBidAsk);
+    if (pa) s.startUnitsA = s.startCapital / pa;
+  }
+
+  const fee = settings.feePct / 100;
   let saleAmount: number;
   let commission: number;
   let newCapital: number;
 
   if (s.holding === null) {
-    // ورود اولیه، خرید مجانی، بدون فروش
     saleAmount = s.cashCapital;
     commission = 0;
     newCapital = s.cashCapital;
   } else {
     saleAmount = s.units * sellPrice;
-    commission = saleAmount * FEE;
+    commission = saleAmount * fee;
     newCapital = saleAmount - commission;
   }
   const newUnits = newCapital / buyPrice;
@@ -174,14 +248,17 @@ export function executeSignal(s: PairState, priceA: number, priceB: number, now:
   s.cashCapital = newCapital;
 }
 
-export function currentPortfolioValue(s: PairState): number {
+export function currentPortfolioValue(s: PairState, useBidAsk: boolean): number {
   if (!s.holding) return s.cashCapital;
-  const p = s.holding === "A" ? s.lastPriceA : s.lastPriceB;
+  const q = s.holding === "A" ? s.lastQuoteA : s.lastQuoteB;
+  // ارزیابی مارک‌ توـ مارکت: از bid (قیمت قابل فروش) استفاده می‌کنیم
+  const p = priceForSell(q, useBidAsk);
   if (!p) return s.cashCapital;
   return s.units * p;
 }
 
-export function equivalentUnitsA(s: PairState): number | null {
-  if (!s.lastPriceA) return null;
-  return currentPortfolioValue(s) / s.lastPriceA;
+export function equivalentUnitsA(s: PairState, useBidAsk: boolean): number | null {
+  const pa = priceForSell(s.lastQuoteA, useBidAsk);
+  if (!pa) return null;
+  return currentPortfolioValue(s, useBidAsk) / pa;
 }

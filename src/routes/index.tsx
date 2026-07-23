@@ -3,11 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getSymbolPrices } from "@/lib/tse.functions";
 import {
   ALL_SYMBOLS,
-  BAND,
-  MA_WINDOW,
+  DEFAULT_SETTINGS,
   PAIRS,
-  START_CAPITAL,
-  POLL_INTERVAL_MS,
   addSample,
   computeMA,
   currentPortfolioValue,
@@ -15,10 +12,14 @@ import {
   evaluateSignal,
   executeSignal,
   loadPair,
+  loadSettings,
   resetPair,
   savePair,
+  saveSettings,
   type PairConfig,
   type PairState,
+  type PriceQuote,
+  type Settings,
 } from "@/lib/rotation-engine";
 
 export const Route = createFileRoute("/")({
@@ -28,7 +29,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران، تولید سیگنال چرخش بر پایه MA20 و شبیه‌سازی معاملات با کارمزد واقعی.",
+          "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی.",
       },
       { property: "og:title", content: "چرخش صندوق‌های طلا" },
       { property: "og:description", content: "سیگنال چرخش لحظه‌ای بین صندوق‌های طلای ایران." },
@@ -41,28 +42,35 @@ export const Route = createFileRoute("/")({
 
 const fmtNum = (n: number | undefined | null, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("fa-IR", { maximumFractionDigits: d });
-const fmtToman = (n: number) =>
-  Math.round(n).toLocaleString("fa-IR") + " تومان";
+const fmtToman = (n: number) => Math.round(n).toLocaleString("fa-IR") + " تومان";
 const fmtPct = (n: number | null, d = 3) =>
   n == null ? "—" : (n * 100).toLocaleString("fa-IR", { maximumFractionDigits: d }) + "٪";
 const fmtTime = (t: number) =>
   new Date(t).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 function Dashboard() {
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [states, setStates] = useState<Record<string, PairState>>({});
-  const [prices, setPrices] = useState<Record<string, { last?: number; error?: string }>>({});
+  const [prices, setPrices] = useState<Record<string, PriceQuote & { error?: string }>>({});
   const [lastFetch, setLastFetch] = useState<number | null>(null);
   const [status, setStatus] = useState<"idle" | "fetching" | "ok" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const running = useRef(false);
+  const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
 
-  // بارگذاری اولیه از localStorage
   useEffect(() => {
+    const st = loadSettings();
+    setSettings(st);
+    settingsRef.current = st;
     const initial: Record<string, PairState> = {};
-    for (const p of PAIRS) initial[p.id] = loadPair(p);
+    for (const p of PAIRS) initial[p.id] = loadPair(p, st.startCapital);
     setStates(initial);
   }, []);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const fetchOnce = async () => {
     if (running.current) return;
@@ -73,15 +81,16 @@ function Dashboard() {
       setPrices(res.prices as any);
       setLastFetch(res.fetchedAt);
       const now = res.fetchedAt;
+      const st = settingsRef.current;
       setStates((prev) => {
         const next: Record<string, PairState> = { ...prev };
         for (const p of PAIRS) {
-          const s = next[p.id] ?? loadPair(p);
-          const pa = (res.prices as any)[p.symbolA]?.last;
-          const pb = (res.prices as any)[p.symbolB]?.last;
-          if (pa && pb) {
-            addSample(s, pa, pb, now);
-            executeSignal(s, pa, pb, now);
+          const s = next[p.id] ?? loadPair(p, st.startCapital);
+          const qa = (res.prices as any)[p.symbolA] as PriceQuote | undefined;
+          const qb = (res.prices as any)[p.symbolB] as PriceQuote | undefined;
+          if (qa && qb) {
+            addSample(s, qa, qb, now, st);
+            executeSignal(s, now, st);
             savePair(s);
           }
           next[p.id] = { ...s };
@@ -98,17 +107,18 @@ function Dashboard() {
     }
   };
 
-  // Polling
   useEffect(() => {
     fetchOnce();
-    const id = window.setInterval(fetchOnce, POLL_INTERVAL_MS);
     const clockId = window.setInterval(() => setTick((t) => t + 1), 1000);
-    return () => {
-      window.clearInterval(id);
-      window.clearInterval(clockId);
-    };
+    return () => window.clearInterval(clockId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(fetchOnce, settings.pollIntervalSec * 1000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.pollIntervalSec]);
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
@@ -117,8 +127,8 @@ function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">چرخش صندوق‌های طلای ایران</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              فوروارد تست زنده • MA{MA_WINDOW} • باند {(BAND * 100).toFixed(1)}٪ • کارمزد فروش
-              ۰.۲۴٪ • سرمایه‌ی هر جفت: {fmtToman(START_CAPITAL)}
+              فوروارد تست زنده با قیمت‌های {settings.useBidAsk ? "bid/ask" : "آخرین معامله"} • MA
+              {settings.maWindow} • باند {settings.bandPct}٪ • کارمزد فروش {settings.feePct}٪
             </p>
           </div>
           <div className="text-sm text-left">
@@ -145,8 +155,7 @@ function Dashboard() {
               </span>
             </div>
             <div className="text-muted-foreground">
-              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"} • ساعت:{" "}
-              {fmtTime(Date.now())}
+              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"} • ساعت: {fmtTime(Date.now())}
               <span className="hidden">{tick}</span>
             </div>
             {errorMsg && <div className="text-destructive text-xs mt-1">{errorMsg}</div>}
@@ -161,15 +170,23 @@ function Dashboard() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        <PriceRow prices={prices} />
+        <SettingsPanel
+          settings={settings}
+          onChange={(s) => {
+            setSettings(s);
+            saveSettings(s);
+          }}
+        />
+        <PriceRow prices={prices} useBidAsk={settings.useBidAsk} />
         <div className="grid gap-6 md:grid-cols-2">
           {PAIRS.map((p) => (
             <PairCard
               key={p.id}
               cfg={p}
               state={states[p.id]}
+              settings={settings}
               onReset={() => {
-                const s = resetPair(p);
+                const s = resetPair(p, settings.startCapital);
                 setStates((prev) => ({ ...prev, [p.id]: s }));
               }}
             />
@@ -179,24 +196,28 @@ function Dashboard() {
         <details className="rounded-lg border border-border bg-card p-4 text-sm">
           <summary className="cursor-pointer font-semibold">راهنمای سریع منطق</summary>
           <ul className="mt-3 space-y-2 text-muted-foreground list-disc pr-5">
-            <li>هر ۳۰ ثانیه قیمت لحظه‌ای «آخرین معامله» از TSETMC خوانده می‌شود.</li>
-            <li>هر ۵ دقیقه یک نمونه‌ی جدید به سری زمانی Ratio اضافه می‌شود.</li>
             <li>
-              اگر انحراف Ratio از MA{MA_WINDOW} از +{(BAND * 100).toFixed(1)}٪ بگذرد، به صندوق B
-              چرخش می‌کند؛ اگر از −{(BAND * 100).toFixed(1)}٪ کمتر شود، به A. بین این باند
-              پوزیشن نگه داشته می‌شود.
+              هر {settings.pollIntervalSec} ثانیه قیمت لحظه‌ای (bid/ask ردیف اول دفتر سفارش) از
+              TSETMC خوانده می‌شود.
             </li>
             <li>
-              خرید: بدون کارمزد. فروش: ۰.۲۴٪ روی کل مبلغ. ورود اولیه از حالت خنثی هیچ کارمزدی
-              ندارد.
+              هر {Math.round(settings.sampleIntervalSec / 60)} دقیقه یک نمونه‌ی جدید به سری
+              Ratio اضافه می‌شود (Ratio از mid = (bid+ask)/2 حساب می‌شود اگر bid/ask فعال باشد).
             </li>
             <li>
-              «واحد معادل A» = ارزش پرتفوی ÷ قیمت صندوق A. اگر رو به رشد است، استراتژی از
-              نگه‌داشتن A بهتر عمل کرده.
+              اگر انحراف Ratio از MA{settings.maWindow} از +{settings.bandPct}٪ بگذرد، به B
+              چرخش می‌کند؛ اگر از −{settings.bandPct}٪ کمتر شود، به A. بین این باند پوزیشن نگه
+              داشته می‌شود.
             </li>
             <li>
-              تاریخچه‌ی معاملات و نمونه‌ها در مرورگر شما (localStorage) ذخیره می‌شود.
+              خرید در قیمت <b>ask</b>، فروش در قیمت <b>bid</b>. کارمزد {settings.feePct}٪ فقط
+              روی فروش. ورود اولیه از حالت خنثی کارمزد ندارد.
             </li>
+            <li>
+              ارزش پرتفوی «مارک‌توـ‌مارکت» است: با bid فعلی (قیمتی که واقعاً می‌شود فروخت) محاسبه
+              می‌شود.
+            </li>
+            <li>تنظیمات و همه‌ی معاملات در مرورگر شما (localStorage) ذخیره می‌شوند.</li>
           </ul>
         </details>
       </main>
@@ -204,7 +225,145 @@ function Dashboard() {
   );
 }
 
-function PriceRow({ prices }: { prices: Record<string, { last?: number; error?: string }> }) {
+function SettingsPanel({
+  settings,
+  onChange,
+}: {
+  settings: Settings;
+  onChange: (s: Settings) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<Settings>(settings);
+  useEffect(() => setDraft(settings), [settings]);
+
+  const upd = <K extends keyof Settings>(k: K, v: Settings[K]) =>
+    setDraft((d) => ({ ...d, [k]: v }));
+
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
+      >
+        <span>⚙️ تنظیمات استراتژی</span>
+        <span className="text-muted-foreground text-xs">{open ? "بستن" : "باز کردن"}</span>
+      </button>
+      {open && (
+        <div className="border-t border-border p-4 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <NumField
+              label="پنجره‌ی میانگین متحرک (نمونه)"
+              value={draft.maWindow}
+              step={1}
+              min={2}
+              onChange={(v) => upd("maWindow", Math.max(2, Math.round(v)))}
+            />
+            <NumField
+              label="باند انحراف (٪)"
+              value={draft.bandPct}
+              step={0.05}
+              min={0}
+              onChange={(v) => upd("bandPct", v)}
+            />
+            <NumField
+              label="کارمزد فروش (٪)"
+              value={draft.feePct}
+              step={0.01}
+              min={0}
+              onChange={(v) => upd("feePct", v)}
+            />
+            <NumField
+              label="سرمایه اولیه (تومان)"
+              value={draft.startCapital}
+              step={1_000_000}
+              min={0}
+              onChange={(v) => upd("startCapital", Math.round(v))}
+            />
+            <NumField
+              label="فاصله‌ی نمونه‌گیری Ratio (ثانیه)"
+              value={draft.sampleIntervalSec}
+              step={30}
+              min={30}
+              onChange={(v) => upd("sampleIntervalSec", Math.round(v))}
+            />
+            <NumField
+              label="بازه‌ی دریافت قیمت (ثانیه)"
+              value={draft.pollIntervalSec}
+              step={5}
+              min={5}
+              onChange={(v) => upd("pollIntervalSec", Math.round(v))}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.useBidAsk}
+              onChange={(e) => upd("useBidAsk", e.target.checked)}
+            />
+            استفاده از bid/ask (اسپرد واقعی بازار). اگر خاموش شود، از «آخرین معامله» استفاده
+            می‌شود.
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => onChange(draft)}
+              className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              ذخیره‌ی تنظیمات
+            </button>
+            <button
+              onClick={() => {
+                setDraft(DEFAULT_SETTINGS);
+                onChange(DEFAULT_SETTINGS);
+              }}
+              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
+            >
+              بازگشت به پیش‌فرض
+            </button>
+            <span className="text-xs text-muted-foreground self-center">
+              توجه: تغییر «سرمایه‌ی اولیه» فقط برای جفت‌هایی اثر می‌گذارد که ریست شوند.
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NumField({
+  label,
+  value,
+  onChange,
+  step,
+  min,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  min?: number;
+}) {
+  return (
+    <label className="block text-sm">
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
+      <input
+        type="number"
+        value={value}
+        step={step}
+        min={min}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+      />
+    </label>
+  );
+}
+
+function PriceRow({
+  prices,
+  useBidAsk,
+}: {
+  prices: Record<string, PriceQuote & { error?: string }>;
+  useBidAsk: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
       {ALL_SYMBOLS.map((sym) => {
@@ -215,9 +374,13 @@ function PriceRow({ prices }: { prices: Record<string, { last?: number; error?: 
             <div className="text-lg font-semibold mt-1">
               {p?.last ? fmtNum(p.last, 0) : p?.error ? "!" : "…"}
             </div>
-            {p?.error && (
-              <div className="text-xs text-destructive mt-1 truncate">{p.error}</div>
+            {useBidAsk && (p?.bid || p?.ask) && (
+              <div className="mt-1 flex justify-between text-[11px] font-mono">
+                <span className="text-emerald-500">bid {fmtNum(p.bid, 0)}</span>
+                <span className="text-rose-500">ask {fmtNum(p.ask, 0)}</span>
+              </div>
             )}
+            {p?.error && <div className="text-xs text-destructive mt-1 truncate">{p.error}</div>}
           </div>
         );
       })}
@@ -228,25 +391,27 @@ function PriceRow({ prices }: { prices: Record<string, { last?: number; error?: 
 function PairCard({
   cfg,
   state,
+  settings,
   onReset,
 }: {
   cfg: PairConfig;
   state: PairState | undefined;
+  settings: Settings;
   onReset: () => void;
 }) {
   const info = useMemo(() => {
     if (!state) return null;
     const last = state.samples[state.samples.length - 1];
-    const ma = computeMA(state.samples);
+    const ma = computeMA(state.samples, settings.maWindow);
     const dev = ma && last ? last.ratio / ma - 1 : null;
-    const sig = evaluateSignal(state);
-    const value = currentPortfolioValue(state);
+    const sig = evaluateSignal(state, settings);
+    const value = currentPortfolioValue(state, settings.useBidAsk);
     const pnl = value - state.startCapital;
     const pnlPct = pnl / state.startCapital;
-    const eqA = equivalentUnitsA(state);
+    const eqA = equivalentUnitsA(state, settings.useBidAsk);
     const eqGrowth = eqA && state.startUnitsA ? eqA / state.startUnitsA - 1 : null;
     return { last, ma, dev, sig, value, pnl, pnlPct, eqA, eqGrowth };
-  }, [state]);
+  }, [state, settings]);
 
   if (!state || !info) {
     return (
@@ -263,7 +428,7 @@ function PairCard({
         ? `چرخش به ${cfg.symbolB}`
         : info.sig === "hold"
           ? "نگهداری پوزیشن فعلی"
-          : `منتظر ${MA_WINDOW} نمونه (${state.samples.length}/${MA_WINDOW})`;
+          : `منتظر ${settings.maWindow} نمونه (${state.samples.length}/${settings.maWindow})`;
 
   const sigColor =
     info.sig === "buyA" || info.sig === "buyB"
@@ -304,28 +469,20 @@ function PairCard({
 
       <div className="grid grid-cols-2 gap-2 text-sm">
         <Stat label="Ratio" value={fmtNum(info.last?.ratio, 6)} />
-        <Stat label={`MA${MA_WINDOW}`} value={fmtNum(info.ma, 6)} />
+        <Stat label={`MA${settings.maWindow}`} value={fmtNum(info.ma, 6)} />
         <Stat label="انحراف" value={fmtPct(info.dev)} />
-        <Stat
-          label="نمونه‌ها"
-          value={`${state.samples.length}`}
-        />
+        <Stat label="نمونه‌ها" value={`${state.samples.length}`} />
         <Stat label="ارزش پرتفوی" value={fmtToman(info.value)} />
         <Stat
           label="سود/زیان"
           value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
           tone={info.pnl >= 0 ? "pos" : "neg"}
         />
-        <Stat
-          label={`واحد معادل ${cfg.symbolA}`}
-          value={fmtNum(info.eqA, 4)}
-        />
+        <Stat label={`واحد معادل ${cfg.symbolA}`} value={fmtNum(info.eqA, 4)} />
         <Stat
           label="رشد واحدی"
           value={fmtPct(info.eqGrowth, 2)}
-          tone={
-            info.eqGrowth == null ? undefined : info.eqGrowth >= 0 ? "pos" : "neg"
-          }
+          tone={info.eqGrowth == null ? undefined : info.eqGrowth >= 0 ? "pos" : "neg"}
         />
       </div>
 
@@ -340,8 +497,8 @@ function PairCard({
                 <tr>
                   <th className="p-2 text-right">زمان</th>
                   <th className="p-2 text-right">به</th>
-                  <th className="p-2 text-right">قیمت فروش</th>
-                  <th className="p-2 text-right">قیمت خرید</th>
+                  <th className="p-2 text-right">فروش (bid)</th>
+                  <th className="p-2 text-right">خرید (ask)</th>
                   <th className="p-2 text-right">کارمزد</th>
                   <th className="p-2 text-right">سرمایه</th>
                 </tr>
@@ -350,9 +507,7 @@ function PairCard({
                 {[...state.trades].reverse().map((tr, i) => (
                   <tr key={i} className="border-t border-border">
                     <td className="p-2">{fmtTime(tr.t)}</td>
-                    <td className="p-2">
-                      {tr.to === "A" ? cfg.symbolA : cfg.symbolB}
-                    </td>
+                    <td className="p-2">{tr.to === "A" ? cfg.symbolA : cfg.symbolB}</td>
                     <td className="p-2">{tr.sellPrice ? fmtNum(tr.sellPrice, 0) : "—"}</td>
                     <td className="p-2">{fmtNum(tr.buyPrice, 0)}</td>
                     <td className="p-2">{fmtNum(tr.commission, 0)}</td>
