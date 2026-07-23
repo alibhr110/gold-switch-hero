@@ -73,12 +73,13 @@ function Dashboard() {
     settingsRef.current = settings;
   }, [settings]);
 
+  const fetchPrices = useServerFn(getBrsPrices);
   const fetchOnce = async () => {
     if (running.current) return;
     running.current = true;
     setStatus("fetching");
     try {
-      const res = await getSymbolPricesClient(ALL_SYMBOLS);
+      const res = await fetchPrices({ data: { symbols: ALL_SYMBOLS } });
       setPrices(res.prices as any);
       setLastFetch(res.fetchedAt);
       const now = res.fetchedAt;
