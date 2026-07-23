@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSymbolPrices } from "@/lib/tse.functions";
+import { getSymbolPricesClient } from "@/lib/tse-client";
 import {
   ALL_SYMBOLS,
   DEFAULT_SETTINGS,
@@ -77,7 +77,7 @@ function Dashboard() {
     running.current = true;
     setStatus("fetching");
     try {
-      const res = await getSymbolPrices({ data: { symbols: ALL_SYMBOLS } });
+      const res = await getSymbolPricesClient(ALL_SYMBOLS);
       setPrices(res.prices as any);
       setLastFetch(res.fetchedAt);
       const now = res.fetchedAt;
@@ -155,8 +155,8 @@ function Dashboard() {
               </span>
             </div>
             <div className="text-muted-foreground">
-              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"} • ساعت: {fmtTime(Date.now())}
-              <span className="hidden">{tick}</span>
+              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"}
+              {tick > 0 && <> • ساعت: {fmtTime(Date.now())}</>}
             </div>
             {errorMsg && <div className="text-destructive text-xs mt-1">{errorMsg}</div>}
             <button
