@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSymbolPricesClient } from "@/lib/tse-client";
+import { useServerFn } from "@tanstack/react-start";
+import { getBrsPrices } from "@/lib/brsapi.functions";
 import {
   ALL_SYMBOLS,
   DEFAULT_SETTINGS,
@@ -72,12 +73,13 @@ function Dashboard() {
     settingsRef.current = settings;
   }, [settings]);
 
+  const fetchPrices = useServerFn(getBrsPrices);
   const fetchOnce = async () => {
     if (running.current) return;
     running.current = true;
     setStatus("fetching");
     try {
-      const res = await getSymbolPricesClient(ALL_SYMBOLS);
+      const res = await fetchPrices({ data: { symbols: ALL_SYMBOLS } });
       setPrices(res.prices as any);
       setLastFetch(res.fetchedAt);
       const now = res.fetchedAt;
