@@ -77,7 +77,7 @@ function Dashboard() {
     running.current = true;
     setStatus("fetching");
     try {
-      const res = await getSymbolPrices({ data: { symbols: ALL_SYMBOLS } });
+      const res = await getSymbolPricesClient(ALL_SYMBOLS);
       setPrices(res.prices as any);
       setLastFetch(res.fetchedAt);
       const now = res.fetchedAt;
