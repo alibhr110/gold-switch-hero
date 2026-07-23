@@ -155,8 +155,8 @@ function Dashboard() {
               </span>
             </div>
             <div className="text-muted-foreground">
-              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"} • ساعت: {fmtTime(Date.now())}
-              <span className="hidden">{tick}</span>
+              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"}
+              {tick > 0 && <> • ساعت: {fmtTime(Date.now())}</>}
             </div>
             {errorMsg && <div className="text-destructive text-xs mt-1">{errorMsg}</div>}
             <button
