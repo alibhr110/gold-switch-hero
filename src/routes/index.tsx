@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSymbolPricesClient } from "@/lib/tse-client";
+import { useServerFn } from "@tanstack/react-start";
+import { getBrsPrices } from "@/lib/brsapi.functions";
 import {
   ALL_SYMBOLS,
   DEFAULT_SETTINGS,
