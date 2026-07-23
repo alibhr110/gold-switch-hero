@@ -39,10 +39,26 @@ async function fetchPrice(insCode: string) {
   const info = json?.closingPriceInfo;
   if (!info) throw new Error("no price info");
   return {
-    last: Number(info.pDrCotVal), // آخرین معامله
-    close: Number(info.pClosing), // پایانی
-    time: Date.now(),
+    last: Number(info.pDrCotVal),
+    close: Number(info.pClosing),
   };
+}
+
+async function fetchBestLimits(insCode: string) {
+  // ردیف اول دفتر سفارش: pMeDem = بهترین بید، pMeOf = بهترین اَسک
+  const url = `http://cdn.tsetmc.com/api/BestLimits/${insCode}`;
+  try {
+    const json = await fetchJson(url);
+    const rows: any[] = json?.bestLimits ?? [];
+    const row1 = rows.find((r) => Number(r.number) === 1) ?? rows[0];
+    if (!row1) return { bid: 0, ask: 0 };
+    return {
+      bid: Number(row1.pMeDem) || 0,
+      ask: Number(row1.pMeOf) || 0,
+    };
+  } catch {
+    return { bid: 0, ask: 0 };
+  }
 }
 
 export const getSymbolPrices = createServerFn({ method: "GET" })
@@ -50,7 +66,14 @@ export const getSymbolPrices = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const out: Record<
       string,
-      { insCode?: string; last?: number; close?: number; time?: number; error?: string }
+      {
+        insCode?: string;
+        last?: number;
+        close?: number;
+        bid?: number;
+        ask?: number;
+        error?: string;
+      }
     > = {};
     await Promise.all(
       data.symbols.map(async (sym) => {
@@ -60,8 +83,8 @@ export const getSymbolPrices = createServerFn({ method: "GET" })
             out[sym] = { error: "نماد یافت نشد" };
             return;
           }
-          const p = await fetchPrice(code);
-          out[sym] = { insCode: code, ...p };
+          const [p, bl] = await Promise.all([fetchPrice(code), fetchBestLimits(code)]);
+          out[sym] = { insCode: code, ...p, ...bl };
         } catch (e: any) {
           out[sym] = { error: e?.message ?? "خطا" };
         }
