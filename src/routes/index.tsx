@@ -31,8 +31,8 @@ export const Route = createFileRoute("/")({
         content:
           "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی.",
       },
-      { property: "og:title", content: "چرخش صندوق‌های طلا" },
-      { property: "og:description", content: "سیگنال چرخش لحظه‌ای بین صندوق‌های طلای ایران." },
+      { property: "og:title", content: "چرخش صندوق‌های طلا — سیگنال لحظه‌ای و بک‌تست مجازی" },
+      { property: "og:description", content: "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
