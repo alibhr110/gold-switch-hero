@@ -14,7 +14,213 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      pair_state: {
+        Row: {
+          cash_capital: number
+          holding: string | null
+          last_ask_a: number | null
+          last_ask_b: number | null
+          last_bid_a: number | null
+          last_bid_b: number | null
+          last_last_a: number | null
+          last_last_b: number | null
+          last_updated: string | null
+          pair_id: string
+          start_units_a: number
+          units: number
+        }
+        Insert: {
+          cash_capital?: number
+          holding?: string | null
+          last_ask_a?: number | null
+          last_ask_b?: number | null
+          last_bid_a?: number | null
+          last_bid_b?: number | null
+          last_last_a?: number | null
+          last_last_b?: number | null
+          last_updated?: string | null
+          pair_id: string
+          start_units_a?: number
+          units?: number
+        }
+        Update: {
+          cash_capital?: number
+          holding?: string | null
+          last_ask_a?: number | null
+          last_ask_b?: number | null
+          last_bid_a?: number | null
+          last_bid_b?: number | null
+          last_last_a?: number | null
+          last_last_b?: number | null
+          last_updated?: string | null
+          pair_id?: string
+          start_units_a?: number
+          units?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pair_state_pair_id_fkey"
+            columns: ["pair_id"]
+            isOneToOne: true
+            referencedRelation: "pairs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pairs: {
+        Row: {
+          band_pct: number
+          created_at: string
+          fee_pct: number
+          id: string
+          label: string
+          ma_window: number
+          sample_interval_sec: number
+          start_capital: number
+          symbol_a: string
+          symbol_b: string
+          use_bid_ask: boolean
+        }
+        Insert: {
+          band_pct?: number
+          created_at?: string
+          fee_pct?: number
+          id: string
+          label: string
+          ma_window?: number
+          sample_interval_sec?: number
+          start_capital?: number
+          symbol_a: string
+          symbol_b: string
+          use_bid_ask?: boolean
+        }
+        Update: {
+          band_pct?: number
+          created_at?: string
+          fee_pct?: number
+          id?: string
+          label?: string
+          ma_window?: number
+          sample_interval_sec?: number
+          start_capital?: number
+          symbol_a?: string
+          symbol_b?: string
+          use_bid_ask?: boolean
+        }
+        Relationships: []
+      }
+      samples: {
+        Row: {
+          a: number
+          b: number
+          id: number
+          pair_id: string
+          ratio: number
+          t: string
+        }
+        Insert: {
+          a: number
+          b: number
+          id?: number
+          pair_id: string
+          ratio: number
+          t?: string
+        }
+        Update: {
+          a?: number
+          b?: number
+          id?: number
+          pair_id?: string
+          ratio?: number
+          t?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samples_pair_id_fkey"
+            columns: ["pair_id"]
+            isOneToOne: false
+            referencedRelation: "pairs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      symbol_quotes: {
+        Row: {
+          ask: number | null
+          bid: number | null
+          fetched_at: string
+          last: number | null
+          symbol: string
+        }
+        Insert: {
+          ask?: number | null
+          bid?: number | null
+          fetched_at?: string
+          last?: number | null
+          symbol: string
+        }
+        Update: {
+          ask?: number | null
+          bid?: number | null
+          fetched_at?: string
+          last?: number | null
+          symbol?: string
+        }
+        Relationships: []
+      }
+      trades: {
+        Row: {
+          buy_price: number
+          commission: number
+          from_side: string
+          gross_sale: number
+          id: number
+          new_capital: number
+          new_units: number
+          pair_id: string
+          sell_price: number
+          t: string
+          to_side: string
+          units_sold: number
+        }
+        Insert: {
+          buy_price: number
+          commission: number
+          from_side: string
+          gross_sale: number
+          id?: number
+          new_capital: number
+          new_units: number
+          pair_id: string
+          sell_price: number
+          t?: string
+          to_side: string
+          units_sold: number
+        }
+        Update: {
+          buy_price?: number
+          commission?: number
+          from_side?: string
+          gross_sale?: number
+          id?: number
+          new_capital?: number
+          new_units?: number
+          pair_id?: string
+          sell_price?: number
+          t?: string
+          to_side?: string
+          units_sold?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trades_pair_id_fkey"
+            columns: ["pair_id"]
+            isOneToOne: false
+            referencedRelation: "pairs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
