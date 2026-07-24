@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useSuspenseQuery, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState, Suspense } from "react";
+import { useMemo, useState } from "react";
+
 import { getDashboard } from "@/lib/dashboard.functions";
 
 export const Route = createFileRoute("/")({
@@ -23,12 +24,9 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: () => (
-    <Suspense fallback={<div dir="rtl" className="p-6 text-sm">در حال بارگذاری…</div>}>
-      <Dashboard />
-    </Suspense>
-  ),
+  component: Dashboard,
 });
+
 
 const fmtNum = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : Number(n).toLocaleString("fa-IR", { maximumFractionDigits: d });
