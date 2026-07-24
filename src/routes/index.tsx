@@ -1,26 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { getBrsPricesClient } from "@/lib/brsapi-client";
-import {
-  ALL_SYMBOLS,
-  DEFAULT_SETTINGS,
-  PAIRS,
-  addSample,
-  computeMA,
-  currentPortfolioValue,
-  equivalentUnitsA,
-  evaluateSignal,
-  executeSignal,
-  loadPair,
-  loadSettings,
-  resetPair,
-  savePair,
-  saveSettings,
-  type PairConfig,
-  type PairState,
-  type PriceQuote,
-  type Settings,
-} from "@/lib/rotation-engine";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useMemo, useState } from "react";
+
+import { getDashboard } from "@/lib/dashboard.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -32,7 +15,11 @@ export const Route = createFileRoute("/")({
           "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی.",
       },
       { property: "og:title", content: "چرخش صندوق‌های طلا — سیگنال لحظه‌ای و بک‌تست مجازی" },
-      { property: "og:description", content: "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی." },
+      {
+        property: "og:description",
+        content:
+          "داشبورد فارسی پایش لحظه‌ای ۴ جفت از صندوق‌های طلای ایران با قیمت‌های bid/ask، تولید سیگنال چرخش بر پایه MA و شبیه‌سازی معاملات با کارمزد واقعی.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -40,85 +27,63 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const fmtNum = (n: number | undefined | null, d = 2) =>
-  n == null || !isFinite(n) ? "—" : n.toLocaleString("fa-IR", { maximumFractionDigits: d });
+
+const fmtNum = (n: number | null | undefined, d = 2) =>
+  n == null || !isFinite(n) ? "—" : Number(n).toLocaleString("fa-IR", { maximumFractionDigits: d });
 const fmtToman = (n: number) => Math.round(n).toLocaleString("fa-IR") + " تومان";
 const fmtPct = (n: number | null, d = 3) =>
   n == null ? "—" : (n * 100).toLocaleString("fa-IR", { maximumFractionDigits: d }) + "٪";
-const fmtTime = (t: number) =>
-  new Date(t).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const fmtTime = (iso: string | null | undefined) =>
+  !iso
+    ? "—"
+    : new Date(iso).toLocaleTimeString("fa-IR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
 
 function Dashboard() {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [states, setStates] = useState<Record<string, PairState>>({});
-  const [prices, setPrices] = useState<Record<string, PriceQuote & { error?: string }>>({});
-  const [lastFetch, setLastFetch] = useState<number | null>(null);
-  const [status, setStatus] = useState<"idle" | "fetching" | "ok" | "error">("idle");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
-  const running = useRef(false);
-  const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
+  const fetchDashboard = useServerFn(getDashboard);
+  const { data } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => fetchDashboard(),
+    refetchInterval: 15_000,
+  });
 
-  useEffect(() => {
-    const st = loadSettings();
-    setSettings(st);
-    settingsRef.current = st;
-    const initial: Record<string, PairState> = {};
-    for (const p of PAIRS) initial[p.id] = loadPair(p, st.startCapital);
-    setStates(initial);
-  }, []);
+  const quoteMap = useMemo(() => {
+    const m = new Map<string, NonNullable<typeof data>["quotes"][number]>();
+    if (data) for (const q of data.quotes) m.set(q.symbol, q);
+    return m;
+  }, [data]);
 
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
+  const stateMap = useMemo(() => {
+    const m = new Map<string, NonNullable<typeof data>["states"][number]>();
+    if (data) for (const s of data.states) m.set(s.pair_id, s);
+    return m;
+  }, [data]);
 
-  const fetchOnce = async () => {
-    if (running.current) return;
-    running.current = true;
-    setStatus("fetching");
-    try {
-      const res = await getBrsPricesClient(ALL_SYMBOLS);
-      setPrices(res.prices as any);
-      setLastFetch(res.fetchedAt);
-      const now = res.fetchedAt;
-      const st = settingsRef.current;
-      setStates((prev) => {
-        const next: Record<string, PairState> = { ...prev };
-        for (const p of PAIRS) {
-          const s = next[p.id] ?? loadPair(p, st.startCapital);
-          const qa = (res.prices as any)[p.symbolA] as PriceQuote | undefined;
-          const qb = (res.prices as any)[p.symbolB] as PriceQuote | undefined;
-          if (qa && qb) {
-            addSample(s, qa, qb, now, st);
-            executeSignal(s, now, st);
-            savePair(s);
-          }
-          next[p.id] = { ...s };
-        }
-        return next;
-      });
-      setStatus("ok");
-      setErrorMsg(null);
-    } catch (e: any) {
-      setStatus("error");
-      setErrorMsg(e?.message ?? "خطا در دریافت قیمت");
-    } finally {
-      running.current = false;
-    }
-  };
+  const tradesByPair = useMemo(() => {
+    const m = new Map<string, NonNullable<typeof data>["trades"]>();
+    if (data)
+      for (const t of data.trades) {
+        const arr = m.get(t.pair_id) ?? [];
+        arr.push(t);
+        m.set(t.pair_id, arr);
+      }
+    return m;
+  }, [data]);
 
-  useEffect(() => {
-    fetchOnce();
-    const clockId = window.setInterval(() => setTick((t) => t + 1), 1000);
-    return () => window.clearInterval(clockId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const lastFetchTime = data
+    ? data.states
+        .map((s: { last_updated: string | null }) =>
+          s.last_updated ? new Date(s.last_updated).getTime() : 0,
+        )
+        .reduce((a: number, b: number) => Math.max(a, b), 0) || 0
+    : 0;
+  const stale = lastFetchTime === 0 ? true : Date.now() - lastFetchTime > 10 * 60 * 1000;
+  const pairs = data?.pairs ?? [];
+  const samplesByPair = data?.samplesByPair ?? {};
 
-  useEffect(() => {
-    const id = window.setInterval(fetchOnce, settings.pollIntervalSec * 1000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.pollIntervalSec]);
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
@@ -127,117 +92,98 @@ function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">چرخش صندوق‌های طلای ایران</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              فوروارد تست زنده با قیمت‌های {settings.useBidAsk ? "bid/ask" : "آخرین معامله"} • MA
-              {settings.maWindow} • باند {settings.bandPct}٪ • کارمزد فروش {settings.feePct}٪
+              فوروارد تست سمت سرور • داده از VPS ایرانی هر ۵ دقیقه به سرور ارسال می‌شود.
             </p>
           </div>
           <div className="text-sm text-left">
             <div>
               وضعیت:{" "}
-              <span
-                className={
-                  status === "ok"
-                    ? "text-emerald-500"
-                    : status === "fetching"
-                      ? "text-amber-500"
-                      : status === "error"
-                        ? "text-destructive"
-                        : "text-muted-foreground"
-                }
-              >
-                {status === "ok"
-                  ? "به‌روز"
-                  : status === "fetching"
-                    ? "در حال دریافت…"
-                    : status === "error"
-                      ? "خطا"
-                      : "—"}
+              <span className={stale ? "text-amber-500" : "text-emerald-500"}>
+                {stale ? "قدیمی / بدون داده" : "به‌روز"}
               </span>
             </div>
             <div className="text-muted-foreground">
-              آخرین دریافت: {lastFetch ? fmtTime(lastFetch) : "—"}
-              {tick > 0 && <> • ساعت: {fmtTime(Date.now())}</>}
+              آخرین به‌روزرسانی:{" "}
+              {lastFetchTime ? fmtTime(new Date(lastFetchTime).toISOString()) : "—"}
             </div>
-            {errorMsg && <div className="text-destructive text-xs mt-1">{errorMsg}</div>}
-            <button
-              onClick={fetchOnce}
-              className="mt-2 inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              به‌روزرسانی دستی
-            </button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
-        <SettingsPanel
-          settings={settings}
-          onChange={(s) => {
-            setSettings(s);
-            saveSettings(s);
-          }}
-        />
-        <PriceRow prices={prices} useBidAsk={settings.useBidAsk} />
+        <IngestSetupCard />
+        <PriceRow pairs={pairs} quoteMap={quoteMap} />
         <div className="grid gap-6 md:grid-cols-2">
-          {PAIRS.map((p) => (
+          {pairs.map((p: Pair) => (
             <PairCard
               key={p.id}
-              cfg={p}
-              state={states[p.id]}
-              settings={settings}
-              onReset={() => {
-                const s = resetPair(p, settings.startCapital);
-                setStates((prev) => ({ ...prev, [p.id]: s }));
-              }}
+              pair={p}
+              state={stateMap.get(p.id)}
+              samples={samplesByPair[p.id] ?? []}
+
+              trades={tradesByPair.get(p.id) ?? []}
+              quoteA={quoteMap.get(p.symbol_a)}
+              quoteB={quoteMap.get(p.symbol_b)}
             />
           ))}
         </div>
-
-        <details className="rounded-lg border border-border bg-card p-4 text-sm">
-          <summary className="cursor-pointer font-semibold">راهنمای سریع منطق</summary>
-          <ul className="mt-3 space-y-2 text-muted-foreground list-disc pr-5">
-            <li>
-              هر {settings.pollIntervalSec} ثانیه قیمت لحظه‌ای (bid/ask ردیف اول دفتر سفارش) از
-              TSETMC خوانده می‌شود.
-            </li>
-            <li>
-              هر {Math.round(settings.sampleIntervalSec / 60)} دقیقه یک نمونه‌ی جدید به سری
-              Ratio اضافه می‌شود (Ratio از mid = (bid+ask)/2 حساب می‌شود اگر bid/ask فعال باشد).
-            </li>
-            <li>
-              اگر انحراف Ratio از MA{settings.maWindow} از +{settings.bandPct}٪ بگذرد، به B
-              چرخش می‌کند؛ اگر از −{settings.bandPct}٪ کمتر شود، به A. بین این باند پوزیشن نگه
-              داشته می‌شود.
-            </li>
-            <li>
-              خرید در قیمت <b>ask</b>، فروش در قیمت <b>bid</b>. کارمزد {settings.feePct}٪ فقط
-              روی فروش. ورود اولیه از حالت خنثی کارمزد ندارد.
-            </li>
-            <li>
-              ارزش پرتفوی «مارک‌توـ‌مارکت» است: با bid فعلی (قیمتی که واقعاً می‌شود فروخت) محاسبه
-              می‌شود.
-            </li>
-            <li>تنظیمات و همه‌ی معاملات در مرورگر شما (localStorage) ذخیره می‌شوند.</li>
-          </ul>
-        </details>
       </main>
     </div>
   );
 }
 
-function SettingsPanel({
-  settings,
-  onChange,
-}: {
-  settings: Settings;
-  onChange: (s: Settings) => void;
-}) {
+function IngestSetupCard() {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<Settings>(settings);
-  useEffect(() => setDraft(settings), [settings]);
+  // Use the stable production URL for external cron
+  const endpoint =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/public/ingest`
+      : "/api/public/ingest";
+  const script = `# اجرا هر ۵ دقیقه با cron روی VPS ایرانی:
+# */5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1
 
-  const upd = <K extends keyof Settings>(k: K, v: Settings[K]) =>
-    setDraft((d) => ({ ...d, [k]: v }));
+import os, requests
+
+BRSAPI_KEY = "BtUXZHavdD6mwHaTiAKEdtebvziVHFLs"
+INGEST_URL = "${endpoint}"
+INGEST_TOKEN = os.environ["INGEST_TOKEN"]  # همان توکنی که سرور نگه داشته
+SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج"]
+
+def norm(s): return s.replace("ي","ی").replace("ك","ک").strip()
+
+r = requests.get(
+    f"https://Api.BrsApi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
+    timeout=30,
+)
+r.raise_for_status()
+rows = r.json()
+if isinstance(rows, dict): rows = rows.get("data", [])
+
+wanted = {norm(s) for s in SYMBOLS}
+by_name = {}
+for row in rows:
+    name = norm(row.get("l18",""))
+    if name in wanted and name not in by_name:
+        by_name[name] = row
+
+prices = {}
+for s in SYMBOLS:
+    row = by_name.get(norm(s))
+    if not row: continue
+    prices[s] = {
+        "bid":  float(row.get("pd1") or 0) or None,
+        "ask":  float(row.get("po1") or 0) or None,
+        "last": float(row.get("pl")  or 0) or None,
+    }
+
+resp = requests.post(
+    INGEST_URL,
+    headers={"X-Ingest-Token": INGEST_TOKEN, "Content-Type": "application/json"},
+    json={"prices": prices},
+    timeout=30,
+)
+print(resp.status_code, resp.text[:300])
+`;
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -245,83 +191,41 @@ function SettingsPanel({
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
       >
-        <span>⚙️ تنظیمات استراتژی</span>
+        <span>🛰️ راه‌اندازی VPS ایرانی برای ارسال داده</span>
         <span className="text-muted-foreground text-xs">{open ? "بستن" : "باز کردن"}</span>
       </button>
       {open && (
-        <div className="border-t border-border p-4 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <NumField
-              label="پنجره‌ی میانگین متحرک (نمونه)"
-              value={draft.maWindow}
-              step={1}
-              min={2}
-              onChange={(v) => upd("maWindow", Math.max(2, Math.round(v)))}
-            />
-            <NumField
-              label="باند انحراف (٪)"
-              value={draft.bandPct}
-              step={0.05}
-              min={0}
-              onChange={(v) => upd("bandPct", v)}
-            />
-            <NumField
-              label="کارمزد فروش (٪)"
-              value={draft.feePct}
-              step={0.01}
-              min={0}
-              onChange={(v) => upd("feePct", v)}
-            />
-            <NumField
-              label="سرمایه اولیه (تومان)"
-              value={draft.startCapital}
-              step={1_000_000}
-              min={0}
-              onChange={(v) => upd("startCapital", Math.round(v))}
-            />
-            <NumField
-              label="فاصله‌ی نمونه‌گیری Ratio (ثانیه)"
-              value={draft.sampleIntervalSec}
-              step={30}
-              min={30}
-              onChange={(v) => upd("sampleIntervalSec", Math.round(v))}
-            />
-            <NumField
-              label="بازه‌ی دریافت قیمت (ثانیه)"
-              value={draft.pollIntervalSec}
-              step={5}
-              min={5}
-              onChange={(v) => upd("pollIntervalSec", Math.round(v))}
-            />
+        <div className="border-t border-border p-4 space-y-4 text-sm">
+          <div className="space-y-2">
+            <div className="text-muted-foreground">Endpoint دریافت داده (POST):</div>
+            <code className="block rounded bg-muted p-2 text-xs font-mono break-all">
+              {endpoint}
+            </code>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={draft.useBidAsk}
-              onChange={(e) => upd("useBidAsk", e.target.checked)}
-            />
-            استفاده از bid/ask (اسپرد واقعی بازار). اگر خاموش شود، از «آخرین معامله» استفاده
-            می‌شود.
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onChange(draft)}
-              className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              ذخیره‌ی تنظیمات
-            </button>
-            <button
-              onClick={() => {
-                setDraft(DEFAULT_SETTINGS);
-                onChange(DEFAULT_SETTINGS);
-              }}
-              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-            >
-              بازگشت به پیش‌فرض
-            </button>
-            <span className="text-xs text-muted-foreground self-center">
-              توجه: تغییر «سرمایه‌ی اولیه» فقط برای جفت‌هایی اثر می‌گذارد که ریست شوند.
-            </span>
+          <div className="space-y-2">
+            <div className="text-muted-foreground">
+              هدر لازم: <code className="text-xs">X-Ingest-Token: &lt;INGEST_TOKEN&gt;</code>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              مقدار INGEST_TOKEN امن است و سمت سرور ذخیره شده. برای مشاهده و کپی، از تنظیمات
+              پروژه (بخش Secrets) استفاده کن.
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="text-muted-foreground">
+              اسکریپت پایتون آماده (روی VPS ایرانی، با cron هر ۵ دقیقه):
+            </div>
+            <pre className="max-h-96 overflow-auto rounded bg-muted p-3 text-[11px] font-mono leading-relaxed">
+{script}
+            </pre>
+          </div>
+          <div className="text-xs text-muted-foreground space-y-1">
+            <div>۱) روی VPS: <code>pip install requests</code></div>
+            <div>۲) مقدار INGEST_TOKEN را در محیط قرار بده: <code>export INGEST_TOKEN=…</code></div>
+            <div>۳) در crontab اضافه کن: <code>*/5 * * * * /usr/bin/python3 /root/gold_ingest.py</code></div>
+            <div>
+              ۴) بعد از چند دقیقه، این داشبورد به‌طور خودکار داده‌های جدید را نشان می‌دهد.
+            </div>
           </div>
         </div>
       )}
@@ -329,58 +233,32 @@ function SettingsPanel({
   );
 }
 
-function NumField({
-  label,
-  value,
-  onChange,
-  step,
-  min,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-  min?: number;
-}) {
-  return (
-    <label className="block text-sm">
-      <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <input
-        type="number"
-        value={value}
-        step={step}
-        min={min}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-      />
-    </label>
-  );
-}
-
 function PriceRow({
-  prices,
-  useBidAsk,
+  pairs,
+  quoteMap,
 }: {
-  prices: Record<string, PriceQuote & { error?: string }>;
-  useBidAsk: boolean;
+  pairs: Array<{ symbol_a: string; symbol_b: string }>;
+  quoteMap: Map<string, { bid: number | null; ask: number | null; last: number | null }>;
 }) {
+  const symbols = Array.from(
+    new Set(pairs.flatMap((p) => [p.symbol_a, p.symbol_b])),
+  );
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-      {ALL_SYMBOLS.map((sym) => {
-        const p = prices[sym];
+      {symbols.map((sym) => {
+        const q = quoteMap.get(sym);
         return (
           <div key={sym} className="rounded-lg border border-border bg-card p-3">
             <div className="text-xs text-muted-foreground">{sym}</div>
             <div className="text-lg font-semibold mt-1">
-              {p?.last ? fmtNum(p.last, 0) : p?.error ? "!" : "…"}
+              {q?.last ? fmtNum(q.last, 0) : "…"}
             </div>
-            {useBidAsk && (p?.bid || p?.ask) && (
+            {q && (q.bid || q.ask) && (
               <div className="mt-1 flex justify-between text-[11px] font-mono">
-                <span className="text-emerald-500">bid {fmtNum(p.bid, 0)}</span>
-                <span className="text-rose-500">ask {fmtNum(p.ask, 0)}</span>
+                <span className="text-emerald-500">bid {fmtNum(q.bid, 0)}</span>
+                <span className="text-rose-500">ask {fmtNum(q.ask, 0)}</span>
               </div>
             )}
-            {p?.error && <div className="text-xs text-destructive mt-1 truncate">{p.error}</div>}
           </div>
         );
       })}
@@ -388,47 +266,116 @@ function PriceRow({
   );
 }
 
+type Pair = {
+  id: string;
+  symbol_a: string;
+  symbol_b: string;
+  label: string;
+  ma_window: number;
+  band_pct: number;
+  fee_pct: number;
+  start_capital: number;
+  use_bid_ask: boolean;
+};
+type State = {
+  pair_id: string;
+  holding: string | null;
+  units: number;
+  cash_capital: number;
+  start_units_a: number;
+  last_bid_a: number | null;
+  last_ask_a: number | null;
+  last_last_a: number | null;
+  last_bid_b: number | null;
+  last_ask_b: number | null;
+  last_last_b: number | null;
+  last_updated: string | null;
+};
+type Trade = {
+  id: number;
+  pair_id: string;
+  t: string;
+  from_side: string;
+  to_side: string;
+  sell_price: number;
+  buy_price: number;
+  commission: number;
+  new_capital: number;
+};
+type Quote = { bid: number | null; ask: number | null; last: number | null };
+
 function PairCard({
-  cfg,
+  pair,
   state,
-  settings,
-  onReset,
+  samples,
+  trades,
+  quoteA,
+  quoteB,
 }: {
-  cfg: PairConfig;
-  state: PairState | undefined;
-  settings: Settings;
-  onReset: () => void;
+  pair: Pair;
+  state: State | undefined;
+  samples: { t: string; ratio: number }[];
+  trades: Trade[];
+  quoteA: Quote | undefined;
+  quoteB: Quote | undefined;
 }) {
   const info = useMemo(() => {
     if (!state) return null;
-    const last = state.samples[state.samples.length - 1];
-    const ma = computeMA(state.samples, settings.maWindow);
-    const dev = ma && last ? last.ratio / ma - 1 : null;
-    const sig = evaluateSignal(state, settings);
-    const value = currentPortfolioValue(state, settings.useBidAsk);
-    const pnl = value - state.startCapital;
-    const pnlPct = pnl / state.startCapital;
-    const eqA = equivalentUnitsA(state, settings.useBidAsk);
-    const eqGrowth = eqA && state.startUnitsA ? eqA / state.startUnitsA - 1 : null;
-    return { last, ma, dev, sig, value, pnl, pnlPct, eqA, eqGrowth };
-  }, [state, settings]);
+    const mid = (q: Quote | undefined) => {
+      if (!q) return null;
+      if (pair.use_bid_ask && q.bid && q.ask) return (Number(q.bid) + Number(q.ask)) / 2;
+      return q.last ?? null;
+    };
+    const a = mid(quoteA);
+    const b = mid(quoteB);
+    const lastRatio = a && b ? a / b : null;
+    const window = samples.slice(-pair.ma_window);
+    const ma =
+      window.length >= pair.ma_window
+        ? window.reduce((acc, s) => acc + s.ratio, 0) / window.length
+        : null;
+    const dev = ma && lastRatio ? lastRatio / ma - 1 : null;
+    const band = Number(pair.band_pct) / 100;
+    let sig: "buyA" | "buyB" | "hold" | "wait" = "wait";
+    if (ma && dev != null) {
+      if (dev > band) sig = "buyB";
+      else if (dev < -band) sig = "buyA";
+      else sig = "hold";
+    }
+    // Mark-to-market
+    const sellPrice = (q: Quote | undefined) => {
+      if (!q) return 0;
+      if (pair.use_bid_ask && q.bid) return Number(q.bid);
+      return Number(q.last ?? q.ask ?? 0);
+    };
+    let value = Number(state.cash_capital);
+    if (state.holding === "A") value = Number(state.units) * sellPrice(quoteA);
+    else if (state.holding === "B") value = Number(state.units) * sellPrice(quoteB);
+    const pnl = value - Number(pair.start_capital);
+    const pnlPct = pnl / Number(pair.start_capital);
+    const paSell = sellPrice(quoteA);
+    const eqA = paSell ? value / paSell : null;
+    const eqGrowth =
+      eqA && state.start_units_a ? eqA / Number(state.start_units_a) - 1 : null;
+    return { lastRatio, ma, dev, sig, value, pnl, pnlPct, eqA, eqGrowth };
+  }, [pair, state, samples, quoteA, quoteB]);
 
   if (!state || !info) {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
-        <div className="text-sm text-muted-foreground">در حال بارگذاری {cfg.label}…</div>
+        <div className="text-sm text-muted-foreground">در حال بارگذاری {pair.label}…</div>
       </div>
     );
   }
 
   const sigLabel =
     info.sig === "buyA"
-      ? `چرخش به ${cfg.symbolA}`
+      ? `چرخش به ${pair.symbol_a}`
       : info.sig === "buyB"
-        ? `چرخش به ${cfg.symbolB}`
+        ? `چرخش به ${pair.symbol_b}`
         : info.sig === "hold"
           ? "نگهداری پوزیشن فعلی"
-          : `منتظر ${settings.maWindow} نمونه (${state.samples.length}/${settings.maWindow})`;
+          : `منتظر ${pair.ma_window} نمونه (${samples.length}/${pair.ma_window})`;
 
   const sigColor =
     info.sig === "buyA" || info.sig === "buyB"
@@ -441,26 +388,17 @@ function PairCard({
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-lg font-bold">{cfg.label}</h2>
+          <h2 className="text-lg font-bold">{pair.label}</h2>
           <div className="text-xs text-muted-foreground mt-0.5">
             پوزیشن فعلی:{" "}
             {state.holding === "A"
-              ? cfg.symbolA
+              ? pair.symbol_a
               : state.holding === "B"
-                ? cfg.symbolB
+                ? pair.symbol_b
                 : "خنثی (هنوز وارد نشده)"}
-            {state.holding && ` • ${fmtNum(state.units, 4)} واحد`}
+            {state.holding && ` • ${fmtNum(Number(state.units), 4)} واحد`}
           </div>
         </div>
-        <button
-          onClick={() => {
-            if (confirm(`ریست کامل جفت ${cfg.label}؟ همه‌ی معاملات و نمونه‌ها پاک می‌شوند.`))
-              onReset();
-          }}
-          className="text-xs text-muted-foreground hover:text-destructive"
-        >
-          ریست
-        </button>
       </div>
 
       <div className={`rounded-md border px-3 py-2 text-sm font-medium ${sigColor}`}>
@@ -468,17 +406,17 @@ function PairCard({
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-sm">
-        <Stat label="Ratio" value={fmtNum(info.last?.ratio, 6)} />
-        <Stat label={`MA${settings.maWindow}`} value={fmtNum(info.ma, 6)} />
+        <Stat label="Ratio" value={fmtNum(info.lastRatio, 6)} />
+        <Stat label={`MA${pair.ma_window}`} value={fmtNum(info.ma, 6)} />
         <Stat label="انحراف" value={fmtPct(info.dev)} />
-        <Stat label="نمونه‌ها" value={`${state.samples.length}`} />
+        <Stat label="نمونه‌ها" value={`${samples.length}`} />
         <Stat label="ارزش پرتفوی" value={fmtToman(info.value)} />
         <Stat
           label="سود/زیان"
           value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
           tone={info.pnl >= 0 ? "pos" : "neg"}
         />
-        <Stat label={`واحد معادل ${cfg.symbolA}`} value={fmtNum(info.eqA, 4)} />
+        <Stat label={`واحد معادل ${pair.symbol_a}`} value={fmtNum(info.eqA, 4)} />
         <Stat
           label="رشد واحدی"
           value={fmtPct(info.eqGrowth, 2)}
@@ -486,10 +424,10 @@ function PairCard({
         />
       </div>
 
-      {state.trades.length > 0 && (
+      {trades.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            {state.trades.length.toLocaleString("fa-IR")} معامله‌ی ثبت‌شده
+            {trades.length.toLocaleString("fa-IR")} معامله‌ی ثبت‌شده
           </summary>
           <div className="mt-2 max-h-56 overflow-auto rounded-md border border-border">
             <table className="w-full text-xs">
@@ -504,14 +442,14 @@ function PairCard({
                 </tr>
               </thead>
               <tbody>
-                {[...state.trades].reverse().map((tr, i) => (
-                  <tr key={i} className="border-t border-border">
+                {trades.map((tr) => (
+                  <tr key={tr.id} className="border-t border-border">
                     <td className="p-2">{fmtTime(tr.t)}</td>
-                    <td className="p-2">{tr.to === "A" ? cfg.symbolA : cfg.symbolB}</td>
-                    <td className="p-2">{tr.sellPrice ? fmtNum(tr.sellPrice, 0) : "—"}</td>
-                    <td className="p-2">{fmtNum(tr.buyPrice, 0)}</td>
+                    <td className="p-2">{tr.to_side === "A" ? pair.symbol_a : pair.symbol_b}</td>
+                    <td className="p-2">{tr.sell_price ? fmtNum(tr.sell_price, 0) : "—"}</td>
+                    <td className="p-2">{fmtNum(tr.buy_price, 0)}</td>
                     <td className="p-2">{fmtNum(tr.commission, 0)}</td>
-                    <td className="p-2">{fmtNum(tr.newCapital, 0)}</td>
+                    <td className="p-2">{fmtNum(tr.new_capital, 0)}</td>
                   </tr>
                 ))}
               </tbody>
