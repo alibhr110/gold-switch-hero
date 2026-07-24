@@ -44,39 +44,46 @@ const fmtTime = (iso: string | null | undefined) =>
 
 function Dashboard() {
   const fetchDashboard = useServerFn(getDashboard);
-  const { data } = useSuspenseQuery({
+  const { data } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => fetchDashboard(),
     refetchInterval: 15_000,
   });
 
   const quoteMap = useMemo(() => {
-    const m = new Map<string, (typeof data.quotes)[number]>();
-    for (const q of data.quotes) m.set(q.symbol, q);
+    const m = new Map<string, NonNullable<typeof data>["quotes"][number]>();
+    if (data) for (const q of data.quotes) m.set(q.symbol, q);
     return m;
-  }, [data.quotes]);
+  }, [data]);
 
   const stateMap = useMemo(() => {
-    const m = new Map<string, (typeof data.states)[number]>();
-    for (const s of data.states) m.set(s.pair_id, s);
+    const m = new Map<string, NonNullable<typeof data>["states"][number]>();
+    if (data) for (const s of data.states) m.set(s.pair_id, s);
     return m;
-  }, [data.states]);
+  }, [data]);
 
   const tradesByPair = useMemo(() => {
-    const m = new Map<string, typeof data.trades>();
-    for (const t of data.trades) {
-      const arr = m.get(t.pair_id) ?? [];
-      arr.push(t);
-      m.set(t.pair_id, arr);
-    }
+    const m = new Map<string, NonNullable<typeof data>["trades"]>();
+    if (data)
+      for (const t of data.trades) {
+        const arr = m.get(t.pair_id) ?? [];
+        arr.push(t);
+        m.set(t.pair_id, arr);
+      }
     return m;
-  }, [data.trades]);
+  }, [data]);
 
-  const lastFetchTime =
-    data.states
-      .map((s) => (s.last_updated ? new Date(s.last_updated).getTime() : 0))
-      .reduce((a, b) => Math.max(a, b), 0) || 0;
+  const lastFetchTime = data
+    ? data.states
+        .map((s: { last_updated: string | null }) =>
+          s.last_updated ? new Date(s.last_updated).getTime() : 0,
+        )
+        .reduce((a: number, b: number) => Math.max(a, b), 0) || 0
+    : 0;
   const stale = lastFetchTime === 0 ? true : Date.now() - lastFetchTime > 10 * 60 * 1000;
+  const pairs = data?.pairs ?? [];
+  const samplesByPair = data?.samplesByPair ?? {};
+
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
