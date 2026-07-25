@@ -242,7 +242,7 @@ print(resp.status_code, resp.text[:300])
             <pre className="rounded bg-muted p-2 text-[11px] font-mono">crontab -e</pre>
             <p>این خط را در انتها اضافه کن:</p>
             <pre className="rounded bg-muted p-2 text-[11px] font-mono">
-              */5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1
+              {`*/5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1`}
             </pre>
             <p>
               <strong>۹. تمام.</strong> از الان به بعد هر ۵ دقیقه یکبار VPS قیمت‌ها را می‌فرستد و
