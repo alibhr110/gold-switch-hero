@@ -134,8 +134,8 @@ function Dashboard() {
 
 function IngestSetupCard() {
   const [open, setOpen] = useState(false);
-  // Stable published URL for external cron (not preview)
-  const endpoint = "https://gold-switch-hero.lovable.app/api/public/ingest";
+  // Stable preview URL; switch to the published URL after the project is published.
+  const endpoint = "https://project--9affff7f-b88e-47b6-8eca-297fb25ac298-dev.lovable.app/api/public/ingest";
   const script = `# اجرا هر ۵ دقیقه با cron روی VPS ایرانی:
 # */5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1
 
