@@ -134,16 +134,14 @@ function Dashboard() {
 
 function IngestSetupCard() {
   const [open, setOpen] = useState(false);
-  // Stable preview URL; switch to the published URL after the project is published.
   const endpoint = "https://project--9affff7f-b88e-47b6-8eca-297fb25ac298-dev.lovable.app/api/public/ingest";
-  const script = `# اجرا هر ۵ دقیقه با cron روی VPS ایرانی:
-# */5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1
-
-import os, requests
-
+  const script = `# کافیه این دو خط را با مقادیر خودت پر کنی
 BRSAPI_KEY = "BtUXZHavdD6mwHaTiAKEdtebvziVHFLs"
+INGEST_TOKEN = "YOUR_INGEST_TOKEN"
+
+import requests
+
 INGEST_URL = "${endpoint}"
-INGEST_TOKEN = os.environ["INGEST_TOKEN"]  # همان توکنی که سرور نگه داشته
 SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج"]
 
 def norm(s): return s.replace("ي","ی").replace("ك","ک").strip()
@@ -188,41 +186,70 @@ print(resp.status_code, resp.text[:300])
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
       >
-        <span>🛰️ راه‌اندازی VPS ایرانی برای ارسال داده</span>
+        <span>🛰️ راه‌اندازی VPS ایرانی (قدم‌به‌قدم)</span>
         <span className="text-muted-foreground text-xs">{open ? "بستن" : "باز کردن"}</span>
       </button>
       {open && (
-        <div className="border-t border-border p-4 space-y-4 text-sm">
-          <div className="space-y-2">
-            <div className="text-muted-foreground">Endpoint دریافت داده (POST):</div>
-            <code className="block rounded bg-muted p-2 text-xs font-mono break-all">
-              {endpoint}
-            </code>
-          </div>
-          <div className="space-y-2">
-            <div className="text-muted-foreground">
-              هدر لازم: <code className="text-xs">X-Ingest-Token: &lt;INGEST_TOKEN&gt;</code>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              مقدار INGEST_TOKEN امن است و سمت سرور ذخیره شده. برای مشاهده و کپی، از تنظیمات
-              پروژه (بخش Secrets) استفاده کن.
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div className="text-muted-foreground">
-              اسکریپت پایتون آماده (روی VPS ایرانی، با cron هر ۵ دقیقه):
-            </div>
-            <pre className="max-h-96 overflow-auto rounded bg-muted p-3 text-[11px] font-mono leading-relaxed">
+        <div className="border-t border-border p-4 space-y-5 text-sm">
+          <div className="space-y-3 text-sm leading-7">
+            <p>
+              <strong>۱. VPS چیه؟</strong> یک کامپیوتر همیشه روشن در ایران. ما به آن می‌گوییم
+              هر ۵ دقیقه قیمت‌ها را بخوان و به سرور ما بفرست.
+            </p>
+            <p>
+              <strong>۲. یک دسترسی به نام SSH بخر / داشته باش.</strong> وقتی VPS را خریدی،
+              فروشنده یک IP، یک نام کاربری (معمولاً root) و یک رمز به تو می‌دهد.
+            </p>
+            <p>
+              <strong>۳. به VPS وصل شو.</strong> از روی ویندوز یا مک، برنامه‌ای به نام Terminal
+              یا Command Prompt را باز کن و این دستور را بنویس:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">ssh root@IP_VPS</pre>
+            <p>
+              به جای <code>IP_VPS</code> همان IPای را که خریدی بنویس. سپس رمز را وارد کن.
+            </p>
+            <p>
+              <strong>۴. یکبار پایتون و ابزارها را نصب کن.</strong> داخل VPS این را بنویس و Enter بزن:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">
+              apt update && apt install -y python3 python3-pip cron && pip3 install requests
+            </pre>
+            <p>
+              <strong>۵. فایل اسکریپت را بساز.</strong> این دستور را بنویس تا فایل باز شود:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">nano /root/gold_ingest.py</pre>
+            <p>
+              متن زیر را کپی کن و داخل آن بچسبان. فقط در خط دوم، به جای{" "}
+              <code>YOUR_INGEST_TOKEN</code> مقدار توکن را بنویس. توکن در بخش{" "}
+              <strong>Secrets / Environment Variables</strong> پروژه‌ات در Lovable ذخیره شده
+              (نامش <code>INGEST_TOKEN</code> است). اگر نتوانستی آن را پیدا کنی، بگو تا کمکت کنم.
+            </p>
+            <pre className="max-h-80 overflow-auto rounded bg-muted p-3 text-[11px] font-mono leading-relaxed">
 {script}
             </pre>
-          </div>
-          <div className="text-xs text-muted-foreground space-y-1">
-            <div>۱) روی VPS: <code>pip install requests</code></div>
-            <div>۲) مقدار INGEST_TOKEN را در محیط قرار بده: <code>export INGEST_TOKEN=…</code></div>
-            <div>۳) در crontab اضافه کن: <code>*/5 * * * * /usr/bin/python3 /root/gold_ingest.py</code></div>
-            <div>
-              ۴) بعد از چند دقیقه، این داشبورد به‌طور خودکار داده‌های جدید را نشان می‌دهد.
-            </div>
+            <p>
+              <strong>۶. فایل را ذخیره کن.</strong> کلیدهای Ctrl + X را بزن، سپس Y را بزن، بعد Enter.
+            </p>
+            <p>
+              <strong>۷. یکبار تست کن.</strong> این را بنویس:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">python3 /root/gold_ingest.py</pre>
+            <p>
+              اگر عدد <strong>200</strong> را دیدی، یعنی همه چی درست است.
+            </p>
+            <p>
+              <strong>۸. به crontab بگو هر ۵ دقیقه اجرا کند.</strong> این دستور را بنویس:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">crontab -e</pre>
+            <p>این خط را در انتها اضافه کن:</p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">
+              {`*/5 * * * * /usr/bin/python3 /root/gold_ingest.py >> /var/log/gold.log 2>&1`}
+            </pre>
+            <p>
+              <strong>۹. تمام.</strong> از الان به بعد هر ۵ دقیقه یکبار VPS قیمت‌ها را می‌فرستد و
+              داشبورد به‌روز می‌شود. برای دیدن لاگ:
+            </p>
+            <pre className="rounded bg-muted p-2 text-[11px] font-mono">tail -f /var/log/gold.log</pre>
           </div>
         </div>
       )}
