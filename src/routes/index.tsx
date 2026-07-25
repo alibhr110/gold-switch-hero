@@ -220,8 +220,9 @@ print(resp.status_code, resp.text[:300])
             <pre className="rounded bg-muted p-2 text-[11px] font-mono">nano /root/gold_ingest.py</pre>
             <p>
               متن زیر را کپی کن و داخل آن بچسبان. فقط در خط دوم، به جای{" "}
-              <code>YOUR_INGEST_TOKEN</code> مقدار توکن را بنویس. توکن را از دکمه‌ی «کپی توکن»
-              در زیر همین کارت می‌توانی برداری.
+              <code>YOUR_INGEST_TOKEN</code> مقدار توکن را بنویس. توکن در بخش{" "}
+              <strong>Secrets / Environment Variables</strong> پروژه‌ات در Lovable ذخیره شده
+              (نامش <code>INGEST_TOKEN</code> است). اگر نتوانستی آن را پیدا کنی، بگو تا کمکت کنم.
             </p>
             <pre className="max-h-80 overflow-auto rounded bg-muted p-3 text-[11px] font-mono leading-relaxed">
 {script}
