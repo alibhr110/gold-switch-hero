@@ -139,19 +139,43 @@ function IngestSetupCard() {
 BRSAPI_KEY = "BtUXZHavdD6mwHaTiAKEdtebvziVHFLs"
 INGEST_TOKEN = "YOUR_INGEST_TOKEN"
 
-import requests
+import time, requests
 
 INGEST_URL = "${endpoint}"
 SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج"]
 
 def norm(s): return s.replace("ي","ی").replace("ك","ک").strip()
 
-r = requests.get(
-    f"https://Api.BrsApi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
-    timeout=30,
-)
-r.raise_for_status()
-rows = r.json()
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "fa,en;q=0.9",
+    "Connection": "close",
+}
+URLS = [
+    f"https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
+    f"https://api.brsapi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
+    f"http://api.brsapi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
+]
+
+rows, last_err = None, None
+s = requests.Session()
+for attempt in range(3):
+    for url in URLS:
+        try:
+            r = s.get(url, headers=HEADERS, timeout=30)
+            r.raise_for_status()
+            rows = r.json()
+            break
+        except Exception as e:
+            last_err = f"{url.split('?')[0]} -> {e}"
+            print("تلاش ناموفق:", last_err)
+    if rows is not None:
+        break
+    time.sleep(5)
+
+if rows is None:
+    raise SystemExit("دریافت قیمت از BrsApi ناموفق بود: " + str(last_err))
 if isinstance(rows, dict): rows = rows.get("data", [])
 
 wanted = {norm(s) for s in SYMBOLS}
