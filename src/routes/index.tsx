@@ -367,7 +367,7 @@ function PairCard({
 }: {
   pair: Pair;
   state: State | undefined;
-  samples: { t: string; ratio: number }[];
+  samples: { t: string; a: number; b: number; ratio: number }[];
   trades: Trade[];
   quoteA: Quote | undefined;
   quoteB: Quote | undefined;
@@ -477,39 +477,39 @@ function PairCard({
         />
       </div>
 
-      {trades.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            {trades.length.toLocaleString("fa-IR")} معامله‌ی ثبت‌شده
-          </summary>
-          <div className="mt-2 max-h-56 overflow-auto rounded-md border border-border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 text-muted-foreground">
-                <tr>
-                  <th className="p-2 text-right">زمان</th>
-                  <th className="p-2 text-right">به</th>
-                  <th className="p-2 text-right">فروش (bid)</th>
-                  <th className="p-2 text-right">خرید (ask)</th>
-                  <th className="p-2 text-right">کارمزد</th>
-                  <th className="p-2 text-right">سرمایه</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((tr) => (
-                  <tr key={tr.id} className="border-t border-border">
-                    <td className="p-2">{fmtTime(tr.t)}</td>
-                    <td className="p-2">{tr.to_side === "A" ? pair.symbol_a : pair.symbol_b}</td>
-                    <td className="p-2">{tr.sell_price ? fmtNum(tr.sell_price, 0) : "—"}</td>
-                    <td className="p-2">{fmtNum(tr.buy_price, 0)}</td>
-                    <td className="p-2">{fmtNum(tr.commission, 0)}</td>
-                    <td className="p-2">{fmtNum(tr.new_capital, 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
+      <details className="text-xs" open>
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          📈 نمودارها
+        </summary>
+        <div className="mt-3">
+          <PairCharts
+            samples={samples}
+            trades={trades}
+            maWindow={pair.ma_window}
+            bandPct={Number(pair.band_pct)}
+            symbolA={pair.symbol_a}
+            symbolB={pair.symbol_b}
+          />
+        </div>
+      </details>
+
+      <details className="text-xs">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          🧾 استیتمنت کامل ({trades.length.toLocaleString("fa-IR")} معامله)
+        </summary>
+        <div className="mt-3">
+          <PairStatement
+            trades={trades}
+            symbolA={pair.symbol_a}
+            symbolB={pair.symbol_b}
+            startCapital={Number(pair.start_capital)}
+            currentValue={info.value}
+            startUnitsA={Number(state.start_units_a)}
+            equivalentUnitsA={info.eqA}
+          />
+        </div>
+      </details>
+
     </div>
   );
 }
