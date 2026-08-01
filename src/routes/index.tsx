@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { getDashboard } from "@/lib/dashboard.functions";
 import { PairCharts } from "@/components/PairCharts";
@@ -29,6 +29,24 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
+
+function isTehranMarketOpen(d: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Tehran",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  );
+  const wd = String(parts["weekday"]);
+  if (wd === "Thu" || wd === "Fri") return false;
+  const mins = Number(parts["hour"]) * 60 + Number(parts["minute"]);
+  return mins >= 720 && mins <= 1020;
+}
 
 const fmtNum = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : Number(n).toLocaleString("fa-IR", { maximumFractionDigits: d });
