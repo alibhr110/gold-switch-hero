@@ -86,6 +86,13 @@ function Dashboard() {
   const pairs = data?.pairs ?? [];
   const samplesByPair = data?.samplesByPair ?? {};
 
+  const [marketOpen, setMarketOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    const check = () => setMarketOpen(isTehranMarketOpen(new Date()));
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
@@ -94,10 +101,24 @@ function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">چرخش صندوق‌های طلای ایران</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              فوروارد تست سمت سرور • داده از VPS ایرانی هر ۵ دقیقه به سرور ارسال می‌شود.
+              فوروارد تست سمت سرور • فقط شنبه تا چهارشنبه، ۱۲:۰۰ تا ۱۷:۰۰ به وقت تهران ثبت می‌شود.
             </p>
           </div>
-          <div className="text-sm text-left">
+          <div className="text-sm text-left space-y-0.5">
+            <div>
+              بازار:{" "}
+              <span
+                className={
+                  marketOpen == null
+                    ? "text-muted-foreground"
+                    : marketOpen
+                      ? "text-emerald-500"
+                      : "text-muted-foreground"
+                }
+              >
+                {marketOpen == null ? "—" : marketOpen ? "باز" : "بسته"}
+              </span>
+            </div>
             <div>
               وضعیت:{" "}
               <span className={stale ? "text-amber-500" : "text-emerald-500"}>
