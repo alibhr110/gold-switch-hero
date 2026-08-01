@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { getDashboard } from "@/lib/dashboard.functions";
+import { PairCharts } from "@/components/PairCharts";
+import { PairStatement } from "@/components/PairStatement";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,6 +29,24 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
+
+function isTehranMarketOpen(d: Date) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Tehran",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value]),
+  );
+  const wd = String(parts["weekday"]);
+  if (wd === "Thu" || wd === "Fri") return false;
+  const mins = Number(parts["hour"]) * 60 + Number(parts["minute"]);
+  return mins >= 720 && mins <= 1020;
+}
 
 const fmtNum = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : Number(n).toLocaleString("fa-IR", { maximumFractionDigits: d });
@@ -84,6 +104,13 @@ function Dashboard() {
   const pairs = data?.pairs ?? [];
   const samplesByPair = data?.samplesByPair ?? {};
 
+  const [marketOpen, setMarketOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    const check = () => setMarketOpen(isTehranMarketOpen(new Date()));
+    check();
+    const id = setInterval(check, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div dir="rtl" className="min-h-screen bg-background text-foreground">
@@ -92,10 +119,24 @@ function Dashboard() {
           <div>
             <h1 className="text-2xl font-bold">چرخش صندوق‌های طلای ایران</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              فوروارد تست سمت سرور • داده از VPS ایرانی هر ۵ دقیقه به سرور ارسال می‌شود.
+              فوروارد تست سمت سرور • فقط شنبه تا چهارشنبه، ۱۲:۰۰ تا ۱۷:۰۰ به وقت تهران ثبت می‌شود.
             </p>
           </div>
-          <div className="text-sm text-left">
+          <div className="text-sm text-left space-y-0.5">
+            <div>
+              بازار:{" "}
+              <span
+                className={
+                  marketOpen == null
+                    ? "text-muted-foreground"
+                    : marketOpen
+                      ? "text-emerald-500"
+                      : "text-muted-foreground"
+                }
+              >
+                {marketOpen == null ? "—" : marketOpen ? "باز" : "بسته"}
+              </span>
+            </div>
             <div>
               وضعیت:{" "}
               <span className={stale ? "text-amber-500" : "text-emerald-500"}>
@@ -347,8 +388,11 @@ type Trade = {
   to_side: string;
   sell_price: number;
   buy_price: number;
+  units_sold: number;
+  gross_sale: number;
   commission: number;
   new_capital: number;
+  new_units: number;
 };
 type Quote = { bid: number | null; ask: number | null; last: number | null };
 
@@ -362,7 +406,7 @@ function PairCard({
 }: {
   pair: Pair;
   state: State | undefined;
-  samples: { t: string; ratio: number }[];
+  samples: { t: string; a: number; b: number; ratio: number }[];
   trades: Trade[];
   quoteA: Quote | undefined;
   quoteB: Quote | undefined;
@@ -472,39 +516,39 @@ function PairCard({
         />
       </div>
 
-      {trades.length > 0 && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-            {trades.length.toLocaleString("fa-IR")} معامله‌ی ثبت‌شده
-          </summary>
-          <div className="mt-2 max-h-56 overflow-auto rounded-md border border-border">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50 text-muted-foreground">
-                <tr>
-                  <th className="p-2 text-right">زمان</th>
-                  <th className="p-2 text-right">به</th>
-                  <th className="p-2 text-right">فروش (bid)</th>
-                  <th className="p-2 text-right">خرید (ask)</th>
-                  <th className="p-2 text-right">کارمزد</th>
-                  <th className="p-2 text-right">سرمایه</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.map((tr) => (
-                  <tr key={tr.id} className="border-t border-border">
-                    <td className="p-2">{fmtTime(tr.t)}</td>
-                    <td className="p-2">{tr.to_side === "A" ? pair.symbol_a : pair.symbol_b}</td>
-                    <td className="p-2">{tr.sell_price ? fmtNum(tr.sell_price, 0) : "—"}</td>
-                    <td className="p-2">{fmtNum(tr.buy_price, 0)}</td>
-                    <td className="p-2">{fmtNum(tr.commission, 0)}</td>
-                    <td className="p-2">{fmtNum(tr.new_capital, 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
+      <details className="text-xs" open>
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          📈 نمودارها
+        </summary>
+        <div className="mt-3">
+          <PairCharts
+            samples={samples}
+            trades={trades}
+            maWindow={pair.ma_window}
+            bandPct={Number(pair.band_pct)}
+            symbolA={pair.symbol_a}
+            symbolB={pair.symbol_b}
+          />
+        </div>
+      </details>
+
+      <details className="text-xs">
+        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+          🧾 استیتمنت کامل ({trades.length.toLocaleString("fa-IR")} معامله)
+        </summary>
+        <div className="mt-3">
+          <PairStatement
+            trades={trades}
+            symbolA={pair.symbol_a}
+            symbolB={pair.symbol_b}
+            startCapital={Number(pair.start_capital)}
+            currentValue={info.value}
+            startUnitsA={Number(state.start_units_a)}
+            equivalentUnitsA={info.eqA}
+          />
+        </div>
+      </details>
+
     </div>
   );
 }

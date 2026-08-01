@@ -20,6 +20,31 @@ function json(status: number, body: unknown) {
   });
 }
 
+// ---- Iran market session gate: Sat–Wed, 12:00–17:00 Asia/Tehran ----
+function tehranParts(d: Date) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tehran",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+  return {
+    weekday: String(parts["weekday"]),
+    hour: Number(parts["hour"]),
+    minute: Number(parts["minute"]),
+  };
+}
+
+function marketOpen(d: Date) {
+  const { weekday, hour, minute } = tehranParts(d);
+  // Iranian weekend: Thursday & Friday
+  if (weekday === "Thu" || weekday === "Fri") return false;
+  const mins = hour * 60 + minute;
+  return mins >= 12 * 60 && mins <= 17 * 60;
+}
+
 function midPrice(q: { bid?: number | null; ask?: number | null; last?: number | null }, useBidAsk: boolean) {
   if (useBidAsk && q.bid && q.ask) return (q.bid + q.ask) / 2;
   return q.last ?? null;
@@ -69,6 +94,7 @@ export const Route = createFileRoute("/api/public/ingest")({
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const now = new Date();
         const nowIso = now.toISOString();
+        const isOpen = marketOpen(now);
 
         // Upsert latest quotes for UI
         const quoteRows = Array.from(priceMap.entries()).map(([symbol, q]) => ({
@@ -81,6 +107,17 @@ export const Route = createFileRoute("/api/public/ingest")({
         if (quoteRows.length) {
           await supabaseAdmin.from("symbol_quotes").upsert(quoteRows, { onConflict: "symbol" });
         }
+
+        if (!isOpen) {
+          return json(200, {
+            ok: true,
+            at: nowIso,
+            marketOpen: false,
+            note: "بازار بسته است (شنبه تا چهارشنبه، ۱۲:۰۰ تا ۱۷:۰۰ به وقت تهران)",
+            results: [],
+          });
+        }
+
 
         const { data: pairs, error: pairsErr } = await supabaseAdmin
           .from("pairs")

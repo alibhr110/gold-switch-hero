@@ -29,16 +29,23 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(async () =
 
   // Recent samples per pair (for MA / chart)
   const pairIds = (pairsRes.data ?? []).map((p) => p.id);
-  const samplesByPair: Record<string, { t: string; ratio: number }[]> = {};
+  const samplesByPair: Record<string, { t: string; a: number; b: number; ratio: number }[]> = {};
   await Promise.all(
     pairIds.map(async (id) => {
       const { data } = await sb
         .from("samples")
-        .select("t, ratio")
+        .select("t, a, b, ratio")
         .eq("pair_id", id)
         .order("t", { ascending: false })
-        .limit(50);
-      samplesByPair[id] = (data ?? []).map((r) => ({ t: r.t as string, ratio: Number(r.ratio) })).reverse();
+        .limit(600);
+      samplesByPair[id] = (data ?? [])
+        .map((r) => ({
+          t: r.t as string,
+          a: Number(r.a),
+          b: Number(r.b),
+          ratio: Number(r.ratio),
+        }))
+        .reverse();
     }),
   );
 
