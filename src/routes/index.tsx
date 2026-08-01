@@ -4,6 +4,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 
 import { getDashboard } from "@/lib/dashboard.functions";
+import { PairCharts } from "@/components/PairCharts";
+import { PairStatement } from "@/components/PairStatement";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -347,8 +349,11 @@ type Trade = {
   to_side: string;
   sell_price: number;
   buy_price: number;
+  units_sold: number;
+  gross_sale: number;
   commission: number;
   new_capital: number;
+  new_units: number;
 };
 type Quote = { bid: number | null; ask: number | null; last: number | null };
 
