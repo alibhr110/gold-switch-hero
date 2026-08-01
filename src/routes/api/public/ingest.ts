@@ -108,6 +108,17 @@ export const Route = createFileRoute("/api/public/ingest")({
           await supabaseAdmin.from("symbol_quotes").upsert(quoteRows, { onConflict: "symbol" });
         }
 
+        if (!isOpen) {
+          return json(200, {
+            ok: true,
+            at: nowIso,
+            marketOpen: false,
+            note: "بازار بسته است (شنبه تا چهارشنبه، ۱۲:۰۰ تا ۱۷:۰۰ به وقت تهران)",
+            results: [],
+          });
+        }
+
+
         const { data: pairs, error: pairsErr } = await supabaseAdmin
           .from("pairs")
           .select("*");
