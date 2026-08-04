@@ -62,6 +62,16 @@ export const Route = createFileRoute("/api/public/ingest")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
+      // Diagnostics: check server clock, Tehran time and market gate without a token
+      GET: async () => {
+        const now = new Date();
+        return json(200, {
+          ok: true,
+          utc: now.toISOString(),
+          tehran: tehranParts(now),
+          marketOpen: marketOpen(now),
+        });
+      },
       POST: async ({ request }) => {
         const expected = process.env.INGEST_TOKEN;
         if (!expected) return json(500, { error: "INGEST_TOKEN not configured" });
@@ -170,7 +180,9 @@ export const Route = createFileRoute("/api/public/ingest")({
           const elapsedMs = lastSample
             ? now.getTime() - new Date(lastSample.t).getTime()
             : Infinity;
-          const shouldSample = elapsedMs >= p.sample_interval_sec * 1000;
+          // Tolerance: cron jitter (e.g. running at 4m58s) must not skip a sample
+          const tolerance = Math.min(60, p.sample_interval_sec * 0.2) * 1000;
+          const shouldSample = elapsedMs >= p.sample_interval_sec * 1000 - tolerance;
 
           let sampleAdded = false;
           if (shouldSample) {
