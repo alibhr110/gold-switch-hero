@@ -176,65 +176,87 @@ function Dashboard() {
 function IngestSetupCard() {
   const [open, setOpen] = useState(false);
   const endpoint = "https://project--9affff7f-b88e-47b6-8eca-297fb25ac298-dev.lovable.app/api/public/ingest";
-  const script = `# کافیه این دو خط را با مقادیر خودت پر کنی
-BRSAPI_KEY = "BtUXZHavdD6mwHaTiAKEdtebvziVHFLs"
+  const script = `# فقط این خط را با توکن خودت پر کن
 INGEST_TOKEN = "YOUR_INGEST_TOKEN"
 
-import time, requests
+# دریافت مستقیم از TSETMC (بدون نیاز به هیچ کلید API)
+import time, re, requests
 
 INGEST_URL = "${endpoint}"
 SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج"]
 
-def norm(s): return s.replace("ي","ی").replace("ك","ک").strip()
+MAP = {"ك": "ک", "ي": "ی", "ى": "ی"}
+def norm(s):
+    s = str(s)
+    for a, b in MAP.items():
+        s = s.replace(a, b)
+    return re.sub(r"\\s+", "", s).strip()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
+    "Accept": "text/plain, */*",
     "Accept-Language": "fa,en;q=0.9",
     "Connection": "close",
 }
 URLS = [
-    f"https://brsapi.ir/Api/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
-    f"https://api.brsapi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
-    f"http://api.brsapi.ir/Tsetmc/AllSymbols.php?key={BRSAPI_KEY}&type=1",
+    "http://old.tsetmc.com/tsev2/data/MarketWatchPlus.aspx?h=0&r=0",
+    "http://old.tsetmc.com/tsev2/data/MarketWatchInit.aspx?h=0&r=0",
+    "https://old.tsetmc.com/tsev2/data/MarketWatchPlus.aspx?h=0&r=0",
 ]
 
-rows, last_err = None, None
+parts, last_err = None, None
 s = requests.Session()
 for attempt in range(3):
     for url in URLS:
         try:
-            r = s.get(url, headers=HEADERS, timeout=30)
+            r = s.get(url, headers=HEADERS, timeout=20, verify=False)
             r.raise_for_status()
-            rows = r.json()
-            break
+            p = r.content.decode("utf-8", "ignore").split("@")
+            if len(p) > 3:
+                parts = p
+                break
         except Exception as e:
-            last_err = f"{url.split('?')[0]} -> {e}"
+            last_err = f"{url} -> {e}"
             print("تلاش ناموفق:", last_err)
-    if rows is not None:
+    if parts:
         break
     time.sleep(5)
 
-if rows is None:
-    raise SystemExit("دریافت قیمت از BrsApi ناموفق بود: " + str(last_err))
-if isinstance(rows, dict): rows = rows.get("data", [])
+if not parts:
+    raise SystemExit("دریافت داده از TSETMC ناموفق بود: " + str(last_err))
 
-wanted = {norm(s) for s in SYMBOLS}
-by_name = {}
-for row in rows:
-    name = norm(row.get("l18",""))
-    if name in wanted and name not in by_name:
-        by_name[name] = row
+# ---- بخش ۳: قیمت‌های بازار ----
+wanted = {norm(x) for x in SYMBOLS}
+by_id, name_of = {}, {}
+for row in parts[2].split(";"):
+    c = row.split(",")
+    if len(c) < 8:
+        continue
+    nm = norm(c[2])
+    if nm in wanted and nm not in name_of.values():
+        by_id[c[0]] = {"last": float(c[7] or 0) or None, "close": float(c[6] or 0) or None}
+        name_of[c[0]] = nm
+
+# ---- بخش ۴: دفتر سفارش (ردیف اول) ----
+book = {}
+for row in parts[3].split(";"):
+    c = row.split(",")
+    if len(c) < 6 or c[1] != "1" or c[0] not in by_id:
+        continue
+    book[c[0]] = {"bid": float(c[4] or 0) or None, "ask": float(c[5] or 0) or None}
 
 prices = {}
-for s in SYMBOLS:
-    row = by_name.get(norm(s))
-    if not row: continue
-    prices[s] = {
-        "bid":  float(row.get("pd1") or 0) or None,
-        "ask":  float(row.get("po1") or 0) or None,
-        "last": float(row.get("pl")  or 0) or None,
+for sid, nm in name_of.items():
+    b = book.get(sid, {})
+    prices[nm] = {
+        "bid": b.get("bid"),
+        "ask": b.get("ask"),
+        "last": by_id[sid]["last"] or by_id[sid]["close"],
     }
+
+print("نمادهای یافت‌شده:", list(prices.keys()))
+if not prices:
+    raise SystemExit("هیچ نمادی پیدا نشد")
 
 resp = requests.post(
     INGEST_URL,
@@ -244,6 +266,7 @@ resp = requests.post(
 )
 print(resp.status_code, resp.text[:300])
 `;
+
 
   return (
     <div className="rounded-lg border border-border bg-card">
