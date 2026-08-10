@@ -31,6 +31,7 @@ export const Route = createFileRoute("/")({
 
 
 function isTehranMarketOpen(d: Date) {
+  if (isIranHoliday(d)) return false;
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-US", {
       timeZone: "Asia/Tehran",
