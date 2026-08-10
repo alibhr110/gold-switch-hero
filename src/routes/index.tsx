@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
 
 import { getDashboard } from "@/lib/dashboard.functions";
+import { isIranHoliday } from "@/lib/market-holidays";
 import { PairCharts } from "@/components/PairCharts";
 import { PairStatement } from "@/components/PairStatement";
 
