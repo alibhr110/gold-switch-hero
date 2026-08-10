@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { isIranHoliday } from "@/lib/market-holidays";
+
 // Normalize Persian characters and whitespace
 const norm = (s: string) =>
   (s ?? "").replace(/ي/g, "ی").replace(/ك/g, "ک").replace(/\s+/g, "").trim();
