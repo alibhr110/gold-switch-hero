@@ -41,6 +41,8 @@ function marketOpen(d: Date) {
   const { weekday, hour, minute } = tehranParts(d);
   // Iranian weekend: Thursday & Friday
   if (weekday === "Thu" || weekday === "Fri") return false;
+  // Official public holidays: bourse closed
+  if (isIranHoliday(d)) return false;
   const mins = hour * 60 + minute;
   return mins >= 12 * 60 && mins <= 17 * 60;
 }
