@@ -157,23 +157,30 @@ export function PairCharts({
     }));
   }, [samples, maWindow, bandPct]);
 
-  const priceSeries = useMemo(() => {
+  const priceASeries = useMemo(() => {
     const seen = new Set<number>();
-    const a: { time: UTCTimestamp; value: number }[] = [];
-    const b: { time: UTCTimestamp; value: number }[] = [];
-    for (const s of samples) {
+    return samples.map((s) => {
       const time = Math.floor(new Date(s.t).getTime() / 1000) as UTCTimestamp;
-      if (seen.has(time)) continue;
+      if (seen.has(time)) return null;
       seen.add(time);
-      a.push({ time, value: s.a });
-      b.push({ time, value: s.b });
-    }
-    return { a, b };
+      return { time, value: s.a };
+    }).filter(Boolean) as { time: UTCTimestamp; value: number }[];
+  }, [samples]);
+
+  const priceBSeries = useMemo(() => {
+    const seen = new Set<number>();
+    return samples.map((s) => {
+      const time = Math.floor(new Date(s.t).getTime() / 1000) as UTCTimestamp;
+      if (seen.has(time)) return null;
+      seen.add(time);
+      return { time, value: s.b };
+    }).filter(Boolean) as { time: UTCTimestamp; value: number }[];
   }, [samples]);
 
   const candleChart = useChart(300);
   const ratioChart = useChart(300);
-  const priceChart = useChart(300);
+  const priceAChart = useChart(300);
+  const priceBChart = useChart(300);
 
   // Candle chart
   useEffect(() => {
@@ -272,34 +279,43 @@ export function PairCharts({
     };
   }, [ratioSeries, trades, symbolA, symbolB, ratioChart.ready]);
 
-  // Prices of both funds (separate scales)
+  // Price of Fund A
   useEffect(() => {
-    const chart = priceChart.chartRef.current;
+    const chart = priceAChart.chartRef.current;
     if (!chart) return;
     const a = chart.addSeries(LineSeries, {
       color: "#3b82f6",
       lineWidth: 2,
       title: symbolA,
-      priceScaleId: "right",
       priceFormat: { type: "price", precision: 0, minMove: 1 },
     });
+    a.setData(priceASeries);
+    chart.timeScale().fitContent();
+    return () => {
+      try {
+        chart.removeSeries(a);
+      } catch {}
+    };
+  }, [priceASeries, symbolA, priceAChart.ready]);
+
+  // Price of Fund B
+  useEffect(() => {
+    const chart = priceBChart.chartRef.current;
+    if (!chart) return;
     const b = chart.addSeries(LineSeries, {
       color: "#f59e0b",
       lineWidth: 2,
       title: symbolB,
-      priceScaleId: "left",
       priceFormat: { type: "price", precision: 0, minMove: 1 },
     });
-    chart.applyOptions({ leftPriceScale: { visible: true, borderColor: GRID } });
-    a.setData(priceSeries.a);
-    b.setData(priceSeries.b);
+    b.setData(priceBSeries);
     chart.timeScale().fitContent();
     return () => {
       try {
-        [a, b].forEach((s) => chart.removeSeries(s));
+        chart.removeSeries(b);
       } catch {}
     };
-  }, [priceSeries, symbolA, symbolB, priceChart.ready]);
+  }, [priceBSeries, symbolB, priceBChart.ready]);
 
   if (samples.length < 2) {
     return (
@@ -342,12 +358,21 @@ export function PairCharts({
         <div ref={ratioChart.containerRef} className="w-full" />
       </ChartFrame>
 
-      <ChartFrame
-        title={`قیمت ${symbolA} (راست) و ${symbolB} (چپ)`}
-        onReset={() => priceChart.chartRef.current?.timeScale().fitContent()}
-      >
-        <div ref={priceChart.containerRef} className="w-full" />
-      </ChartFrame>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ChartFrame
+          title={`قیمت ${symbolA}`}
+          onReset={() => priceAChart.chartRef.current?.timeScale().fitContent()}
+        >
+          <div ref={priceAChart.containerRef} className="w-full" />
+        </ChartFrame>
+
+        <ChartFrame
+          title={`قیمت ${symbolB}`}
+          onReset={() => priceBChart.chartRef.current?.timeScale().fitContent()}
+        >
+          <div ref={priceBChart.containerRef} className="w-full" />
+        </ChartFrame>
+      </div>
     </div>
   );
 }
