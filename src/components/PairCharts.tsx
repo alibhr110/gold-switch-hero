@@ -358,12 +358,21 @@ export function PairCharts({
         <div ref={ratioChart.containerRef} className="w-full" />
       </ChartFrame>
 
-      <ChartFrame
-        title={`قیمت ${symbolA} (راست) و ${symbolB} (چپ)`}
-        onReset={() => priceChart.chartRef.current?.timeScale().fitContent()}
-      >
-        <div ref={priceChart.containerRef} className="w-full" />
-      </ChartFrame>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ChartFrame
+          title={`قیمت ${symbolA}`}
+          onReset={() => priceAChart.chartRef.current?.timeScale().fitContent()}
+        >
+          <div ref={priceAChart.containerRef} className="w-full" />
+        </ChartFrame>
+
+        <ChartFrame
+          title={`قیمت ${symbolB}`}
+          onReset={() => priceBChart.chartRef.current?.timeScale().fitContent()}
+        >
+          <div ref={priceBChart.containerRef} className="w-full" />
+        </ChartFrame>
+      </div>
     </div>
   );
 }
