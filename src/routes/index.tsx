@@ -529,16 +529,20 @@ function PairCard({
         <Stat label="نمونه‌ها" value={`${samples.length}`} />
         <Stat label="ارزش پرتفوی" value={fmtToman(info.value)} />
         <Stat
-          label="سود/زیان"
-          value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
-          tone={info.pnl >= 0 ? "pos" : "neg"}
-        />
-        <Stat label={`واحد معادل ${pair.symbol_a}`} value={fmtNum(info.eqA, 4)} />
-        <Stat
-          label="رشد واحدی"
+          label="سود معاملات (واحدی)"
           value={fmtPct(info.eqGrowth, 2)}
           tone={info.eqGrowth == null ? undefined : info.eqGrowth >= 0 ? "pos" : "neg"}
         />
+        <Stat
+          label={`واحد ${pair.symbol_a}: اکنون / ابتدا`}
+          value={`${fmtNum(info.eqA, 2)} / ${fmtNum(Number(state.start_units_a), 2)}`}
+        />
+        <Stat
+          label="سود/زیان ریالی"
+          value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
+          tone={info.pnl >= 0 ? "pos" : "neg"}
+        />
+
       </div>
 
       <details className="text-xs" open>
