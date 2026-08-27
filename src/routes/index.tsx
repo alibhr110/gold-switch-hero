@@ -436,7 +436,21 @@ function PairCard({
   quoteA: Quote | undefined;
   quoteB: Quote | undefined;
 }) {
+  const [bandPct, setBandPct] = useState<number>(Number(pair.band_pct));
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`band-pct:${pair.id}`);
+      if (raw) setBandPct(Number(raw));
+    } catch {}
+  }, [pair.id]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`band-pct:${pair.id}`, String(bandPct));
+    } catch {}
+  }, [pair.id, bandPct]);
+
   const info = useMemo(() => {
+
     if (!state) return null;
     const mid = (q: Quote | undefined) => {
       if (!q) return null;
