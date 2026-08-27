@@ -14,6 +14,134 @@ export type Database = {
   }
   public: {
     Tables: {
+      fund_samples: {
+        Row: {
+          id: number
+          price: number
+          symbol: string
+          t: string
+        }
+        Insert: {
+          id?: number
+          price: number
+          symbol: string
+          t?: string
+        }
+        Update: {
+          id?: number
+          price?: number
+          symbol?: string
+          t?: string
+        }
+        Relationships: []
+      }
+      multi_state: {
+        Row: {
+          band_pct: number
+          cash_capital: number
+          fee_pct: number
+          funds: string[]
+          holding: string | null
+          id: string
+          last_updated: string | null
+          ma_window: number
+          ref_symbol: string
+          sample_interval_sec: number
+          start_capital: number
+          start_units_ref: number
+          units: number
+          use_bid_ask: boolean
+        }
+        Insert: {
+          band_pct?: number
+          cash_capital?: number
+          fee_pct?: number
+          funds: string[]
+          holding?: string | null
+          id: string
+          last_updated?: string | null
+          ma_window?: number
+          ref_symbol: string
+          sample_interval_sec?: number
+          start_capital?: number
+          start_units_ref?: number
+          units?: number
+          use_bid_ask?: boolean
+        }
+        Update: {
+          band_pct?: number
+          cash_capital?: number
+          fee_pct?: number
+          funds?: string[]
+          holding?: string | null
+          id?: string
+          last_updated?: string | null
+          ma_window?: number
+          ref_symbol?: string
+          sample_interval_sec?: number
+          start_capital?: number
+          start_units_ref?: number
+          units?: number
+          use_bid_ask?: boolean
+        }
+        Relationships: []
+      }
+      multi_trades: {
+        Row: {
+          buy_price: number
+          commission: number
+          dev_pct: number | null
+          from_fund: string | null
+          gross_sale: number
+          id: number
+          new_capital: number
+          new_units: number
+          sell_price: number
+          state_id: string
+          t: string
+          to_fund: string
+          units_sold: number
+        }
+        Insert: {
+          buy_price: number
+          commission?: number
+          dev_pct?: number | null
+          from_fund?: string | null
+          gross_sale?: number
+          id?: number
+          new_capital: number
+          new_units: number
+          sell_price?: number
+          state_id: string
+          t?: string
+          to_fund: string
+          units_sold?: number
+        }
+        Update: {
+          buy_price?: number
+          commission?: number
+          dev_pct?: number | null
+          from_fund?: string | null
+          gross_sale?: number
+          id?: number
+          new_capital?: number
+          new_units?: number
+          sell_price?: number
+          state_id?: string
+          t?: string
+          to_fund?: string
+          units_sold?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "multi_trades_state_id_fkey"
+            columns: ["state_id"]
+            isOneToOne: false
+            referencedRelation: "multi_state"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pair_state: {
         Row: {
           cash_capital: number
