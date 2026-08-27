@@ -80,7 +80,12 @@ export function PairStatement({
         <Metric label="سرمایه اولیه" value={fmtToman(startCapital)} />
         <Metric label="ارزش فعلی" value={fmtToman(currentValue)} />
         <Metric
-          label="سود/زیان خالص"
+          label={`سود معاملات (واحدی ${symbolA})`}
+          value={fmtPct(unitAlpha)}
+          tone={unitAlpha == null ? undefined : unitAlpha >= 0 ? "pos" : "neg"}
+        />
+        <Metric
+          label="سود/زیان ریالی (اطلاعاتی)"
           value={`${fmtToman(pnl)} (${fmtPct(pnl / Number(startCapital))})`}
           tone={pnl >= 0 ? "pos" : "neg"}
         />
@@ -88,14 +93,10 @@ export function PairStatement({
         <Metric label="تعداد معامله" value={fmtNum(rows.length, 0)} />
         <Metric label="سودده / زیان‌ده" value={`${fmtNum(wins, 0)} / ${fmtNum(losses, 0)}`} />
         <Metric
-          label={`واحد معادل ${symbolA}`}
-          value={`${fmtNum(equivalentUnitsA, 4)} از ${fmtNum(startUnitsA, 4)}`}
+          label={`واحد ${symbolA}: اکنون / ابتدا`}
+          value={`${fmtNum(equivalentUnitsA, 2)} / ${fmtNum(startUnitsA, 2)}`}
         />
-        <Metric
-          label={`آلفا نسبت به خرید و نگهداری ${symbolA}`}
-          value={fmtPct(unitAlpha)}
-          tone={unitAlpha == null ? undefined : unitAlpha >= 0 ? "pos" : "neg"}
-        />
+
       </div>
 
       {rows.length === 0 ? (
