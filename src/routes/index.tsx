@@ -159,7 +159,11 @@ function Dashboard() {
 
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         <IngestSetupCard />
-        <PriceRow pairs={pairs} quoteMap={quoteMap} />
+        <PriceRow
+          pairs={pairs}
+          quoteMap={quoteMap}
+          extraSymbols={data?.multiState?.funds ?? []}
+        />
         {data?.multiState && (
           <MultiFundCard
             state={data.multiState as never}
@@ -362,12 +366,14 @@ print(resp.status_code, resp.text[:300])
 function PriceRow({
   pairs,
   quoteMap,
+  extraSymbols = [],
 }: {
   pairs: Array<{ symbol_a: string; symbol_b: string }>;
   quoteMap: Map<string, { bid: number | null; ask: number | null; last: number | null }>;
+  extraSymbols?: string[];
 }) {
   const symbols = Array.from(
-    new Set(pairs.flatMap((p) => [p.symbol_a, p.symbol_b])),
+    new Set([...pairs.flatMap((p) => [p.symbol_a, p.symbol_b]), ...extraSymbols]),
   );
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
