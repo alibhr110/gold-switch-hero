@@ -7,6 +7,9 @@ import { getDashboard } from "@/lib/dashboard.functions";
 import { isIranHoliday } from "@/lib/market-holidays";
 import { PairCharts } from "@/components/PairCharts";
 import { PairStatement } from "@/components/PairStatement";
+import { exportTradesToExcel } from "@/lib/export-trades";
+
+const BAND_OPTIONS: number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 3];
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -466,7 +469,7 @@ function PairCard({
         ? window.reduce((acc, s) => acc + s.ratio, 0) / window.length
         : null;
     const dev = ma && lastRatio ? lastRatio / ma - 1 : null;
-    const band = Number(pair.band_pct) / 100;
+    const band = bandPct / 100;
     let sig: "buyA" | "buyB" | "hold" | "wait" = "wait";
     if (ma && dev != null) {
       if (dev > band) sig = "buyB";
@@ -489,7 +492,7 @@ function PairCard({
     const eqGrowth =
       eqA && state.start_units_a ? eqA / Number(state.start_units_a) - 1 : null;
     return { lastRatio, ma, dev, sig, value, pnl, pnlPct, eqA, eqGrowth };
-  }, [pair, state, samples, quoteA, quoteB]);
+  }, [pair, state, samples, quoteA, quoteB, bandPct]);
 
   if (!state || !info) {
     return (
