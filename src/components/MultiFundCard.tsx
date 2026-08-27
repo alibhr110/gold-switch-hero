@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
+
+const BAND_OPTIONS: number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 3];
 
 type Quote = { bid: number | null; ask: number | null; last: number | null };
 
@@ -70,6 +72,19 @@ export function MultiFundCard({
   const useBidAsk = state.use_bid_ask;
   const funds = state.funds ?? [];
 
+  const [bandPct, setBandPct] = useState<number>(Number(state.band_pct));
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("band-pct:multi");
+      if (raw) setBandPct(Number(raw));
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("band-pct:multi", String(bandPct));
+    } catch { /* ignore */ }
+  }, [bandPct]);
+
   const info = useMemo(() => {
     const value = state.holding
       ? Number(state.units) * sellPriceOf(quoteMap.get(state.holding), useBidAsk)
@@ -101,7 +116,7 @@ export function MultiFundCard({
       devs.push({ fund: f, dev: ma ? last / ma - 1 : null });
     }
     devs.sort((a, b) => (b.dev ?? -Infinity) - (a.dev ?? -Infinity));
-    const band = Number(state.band_pct) / 100;
+    const band = bandPct / 100;
     const best = devs[0];
     const signal =
       !held || !best
@@ -113,7 +128,7 @@ export function MultiFundCard({
             : "نگهداری";
     const sampleCount = held ? heldSeries.length : 0;
     return { value, eqRef, unitGrowth, pnl, devs, signal, sampleCount };
-  }, [state, quoteMap, fundSeries, funds, useBidAsk]);
+  }, [state, quoteMap, fundSeries, funds, useBidAsk, bandPct]);
 
   const totalFees = trades.reduce((a, t) => a + Number(t.commission), 0);
 
@@ -138,6 +153,8 @@ export function MultiFundCard({
     const summary = [
       { شرح: "استراتژی", مقدار: "چرخش بین ۶ صندوق" },
       { شرح: "صندوق‌ها", مقدار: funds.join(" / ") },
+      { شرح: "باند (٪)", مقدار: bandPct },
+      { شرح: "پنجره میانگین متحرک", مقدار: Number(state.ma_window) },
       { شرح: "سرمایه اولیه (تومان)", مقدار: Number(state.start_capital) },
       { شرح: "ارزش فعلی (تومان)", مقدار: Math.round(info.value) },
       { شرح: `واحد اولیه ${state.ref_symbol}`, مقدار: Number(state.start_units_ref) },
@@ -165,6 +182,21 @@ export function MultiFundCard({
             بررسی می‌شود و به بیشترین انحراف مثبت (بالاتر از باند) چرخش انجام می‌شود.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+          باند:
+          <select
+            value={String(bandPct)}
+            onChange={(e) => setBandPct(Number(e.target.value))}
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+          >
+            {BAND_OPTIONS.map((b) => (
+              <option key={b} value={b}>
+                ±{b.toLocaleString("fa-IR")}٪
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={exportExcel}
@@ -172,6 +204,7 @@ export function MultiFundCard({
         >
           ⬇ خروجی اکسل
         </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -199,7 +232,7 @@ export function MultiFundCard({
           سیگنال فعلی:{" "}
           <span className="font-semibold text-foreground">{info.signal}</span>
           {" • "}
-          باند ±{Number(state.band_pct).toLocaleString("fa-IR")}٪ • MA
+          باند ±{bandPct.toLocaleString("fa-IR")}٪ • MA
           {state.ma_window.toLocaleString("fa-IR")} • نمونه‌ها:{" "}
           {info.sampleCount.toLocaleString("fa-IR")}
         </div>
@@ -214,7 +247,7 @@ export function MultiFundCard({
                   "font-mono text-sm " +
                   (d.dev == null
                     ? "text-muted-foreground"
-                    : d.dev > Number(state.band_pct) / 100
+                    : d.dev > bandPct / 100
                       ? "text-amber-500"
                       : d.dev >= 0
                         ? "text-emerald-500"
