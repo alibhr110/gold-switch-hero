@@ -550,7 +550,7 @@ function PairCard({
             samples={samples}
             trades={trades}
             maWindow={pair.ma_window}
-            bandPct={Number(pair.band_pct)}
+            bandPct={bandPct}
             symbolA={pair.symbol_a}
             symbolB={pair.symbol_b}
           />
