@@ -276,7 +276,15 @@ export const Route = createFileRoute("/api/public/ingest")({
           results.push({ pair: p.id, signal, sampleAdded });
         }
 
-        return json(200, { ok: true, at: nowIso, results });
+        const { runMultiRotation } = await import("@/lib/multi-rotation.server");
+        let multi: unknown = null;
+        try {
+          multi = await runMultiRotation(supabaseAdmin, priceMap, norm, now);
+        } catch (e) {
+          multi = { error: e instanceof Error ? e.message : String(e) };
+        }
+
+        return json(200, { ok: true, at: nowIso, results, multi });
       },
     },
   },

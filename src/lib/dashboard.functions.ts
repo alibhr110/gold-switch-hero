@@ -49,7 +49,20 @@ export const getDashboard = createServerFn({ method: "GET" }).handler(async () =
     }),
   );
 
+  const [multiStateRes, multiTradesRes, fundSamplesRes] = await Promise.all([
+    sb.from("multi_state").select("*").eq("id", "main").maybeSingle(),
+    sb.from("multi_trades").select("*").order("t", { ascending: false }).limit(300),
+    sb.from("fund_samples").select("symbol, t, price").order("t", { ascending: false }).limit(3000),
+  ]);
+  const fundSeries: Record<string, { t: string; price: number }[]> = {};
+  for (const r of (fundSamplesRes.data ?? []).slice().reverse()) {
+    (fundSeries[r.symbol as string] ??= []).push({ t: r.t as string, price: Number(r.price) });
+  }
+
   return {
+    multiState: multiStateRes.data ?? null,
+    multiTrades: multiTradesRes.data ?? [],
+    fundSeries,
     pairs: pairsRes.data ?? [],
     states: statesRes.data ?? [],
     quotes: quotesRes.data ?? [],
