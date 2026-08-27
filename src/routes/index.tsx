@@ -503,7 +503,7 @@ function PairCard({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold">{pair.label}</h2>
           <div className="text-xs text-muted-foreground mt-0.5">
@@ -516,7 +516,42 @@ function PairCard({
             {state.holding && ` • ${fmtNum(Number(state.units), 4)} واحد`}
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            باند:
+            <select
+              value={String(bandPct)}
+              onChange={(e) => setBandPct(Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+            >
+              {BAND_OPTIONS.map((b) => (
+                <option key={b} value={b}>
+                  ±{b.toLocaleString("fa-IR")}٪
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              exportTradesToExcel({
+                trades,
+                label: pair.label,
+                symbolA: pair.symbol_a,
+                symbolB: pair.symbol_b,
+                startCapital: Number(pair.start_capital),
+                currentValue: info.value,
+                startUnitsA: Number(state.start_units_a),
+                equivalentUnitsA: info.eqA,
+              })
+            }
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
+          >
+            📊 خروجی اکسل
+          </button>
+        </div>
       </div>
+
 
       <div className={`rounded-md border px-3 py-2 text-sm font-medium ${sigColor}`}>
         سیگنال: {sigLabel}
