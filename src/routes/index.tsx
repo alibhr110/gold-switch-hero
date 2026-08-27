@@ -7,6 +7,9 @@ import { getDashboard } from "@/lib/dashboard.functions";
 import { isIranHoliday } from "@/lib/market-holidays";
 import { PairCharts } from "@/components/PairCharts";
 import { PairStatement } from "@/components/PairStatement";
+import { exportTradesToExcel } from "@/lib/export-trades";
+
+const BAND_OPTIONS: number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 3];
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -436,7 +439,21 @@ function PairCard({
   quoteA: Quote | undefined;
   quoteB: Quote | undefined;
 }) {
+  const [bandPct, setBandPct] = useState<number>(Number(pair.band_pct));
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`band-pct:${pair.id}`);
+      if (raw) setBandPct(Number(raw));
+    } catch {}
+  }, [pair.id]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`band-pct:${pair.id}`, String(bandPct));
+    } catch {}
+  }, [pair.id, bandPct]);
+
   const info = useMemo(() => {
+
     if (!state) return null;
     const mid = (q: Quote | undefined) => {
       if (!q) return null;
@@ -452,7 +469,7 @@ function PairCard({
         ? window.reduce((acc, s) => acc + s.ratio, 0) / window.length
         : null;
     const dev = ma && lastRatio ? lastRatio / ma - 1 : null;
-    const band = Number(pair.band_pct) / 100;
+    const band = bandPct / 100;
     let sig: "buyA" | "buyB" | "hold" | "wait" = "wait";
     if (ma && dev != null) {
       if (dev > band) sig = "buyB";
@@ -475,7 +492,7 @@ function PairCard({
     const eqGrowth =
       eqA && state.start_units_a ? eqA / Number(state.start_units_a) - 1 : null;
     return { lastRatio, ma, dev, sig, value, pnl, pnlPct, eqA, eqGrowth };
-  }, [pair, state, samples, quoteA, quoteB]);
+  }, [pair, state, samples, quoteA, quoteB, bandPct]);
 
   if (!state || !info) {
     return (
@@ -503,7 +520,7 @@ function PairCard({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="flex items-start justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold">{pair.label}</h2>
           <div className="text-xs text-muted-foreground mt-0.5">
@@ -516,7 +533,42 @@ function PairCard({
             {state.holding && ` • ${fmtNum(Number(state.units), 4)} واحد`}
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            باند:
+            <select
+              value={String(bandPct)}
+              onChange={(e) => setBandPct(Number(e.target.value))}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+            >
+              {BAND_OPTIONS.map((b) => (
+                <option key={b} value={b}>
+                  ±{b.toLocaleString("fa-IR")}٪
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              exportTradesToExcel({
+                trades,
+                label: pair.label,
+                symbolA: pair.symbol_a,
+                symbolB: pair.symbol_b,
+                startCapital: Number(pair.start_capital),
+                currentValue: info.value,
+                startUnitsA: Number(state.start_units_a),
+                equivalentUnitsA: info.eqA,
+              })
+            }
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
+          >
+            📊 خروجی اکسل
+          </button>
+        </div>
       </div>
+
 
       <div className={`rounded-md border px-3 py-2 text-sm font-medium ${sigColor}`}>
         سیگنال: {sigLabel}
@@ -529,16 +581,20 @@ function PairCard({
         <Stat label="نمونه‌ها" value={`${samples.length}`} />
         <Stat label="ارزش پرتفوی" value={fmtToman(info.value)} />
         <Stat
-          label="سود/زیان"
-          value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
-          tone={info.pnl >= 0 ? "pos" : "neg"}
-        />
-        <Stat label={`واحد معادل ${pair.symbol_a}`} value={fmtNum(info.eqA, 4)} />
-        <Stat
-          label="رشد واحدی"
+          label="سود معاملات (واحدی)"
           value={fmtPct(info.eqGrowth, 2)}
           tone={info.eqGrowth == null ? undefined : info.eqGrowth >= 0 ? "pos" : "neg"}
         />
+        <Stat
+          label={`واحد ${pair.symbol_a}: اکنون / ابتدا`}
+          value={`${fmtNum(info.eqA, 2)} / ${fmtNum(Number(state.start_units_a), 2)}`}
+        />
+        <Stat
+          label="سود/زیان ریالی"
+          value={`${fmtToman(info.pnl)} (${fmtPct(info.pnlPct, 2)})`}
+          tone={info.pnl >= 0 ? "pos" : "neg"}
+        />
+
       </div>
 
       <details className="text-xs" open>
@@ -550,7 +606,7 @@ function PairCard({
             samples={samples}
             trades={trades}
             maWindow={pair.ma_window}
-            bandPct={Number(pair.band_pct)}
+            bandPct={bandPct}
             symbolA={pair.symbol_a}
             symbolB={pair.symbol_b}
           />
