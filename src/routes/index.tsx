@@ -7,6 +7,7 @@ import { getDashboard } from "@/lib/dashboard.functions";
 import { isIranHoliday } from "@/lib/market-holidays";
 import { PairCharts } from "@/components/PairCharts";
 import { PairStatement } from "@/components/PairStatement";
+import { MultiFundCard } from "@/components/MultiFundCard";
 import { exportTradesToExcel } from "@/lib/export-trades";
 
 const BAND_OPTIONS: number[] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 3];
@@ -159,6 +160,14 @@ function Dashboard() {
       <main className="mx-auto max-w-7xl px-4 py-6 space-y-6">
         <IngestSetupCard />
         <PriceRow pairs={pairs} quoteMap={quoteMap} />
+        {data?.multiState && (
+          <MultiFundCard
+            state={data.multiState as never}
+            trades={(data.multiTrades ?? []) as never}
+            fundSeries={data.fundSeries ?? {}}
+            quoteMap={quoteMap}
+          />
+        )}
         <div className="grid gap-6 md:grid-cols-2">
           {pairs.map((p: Pair) => (
             <PairCard
@@ -188,7 +197,7 @@ INGEST_TOKEN = "YOUR_INGEST_TOKEN"
 import time, re, requests
 
 INGEST_URL = "${endpoint}"
-SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج"]
+SYMBOLS = ["مثقال", "عیار", "جواهر", "کهربا", "گنج", "طلا"]
 
 MAP = {"ك": "ک", "ي": "ی", "ى": "ی"}
 def norm(s):
