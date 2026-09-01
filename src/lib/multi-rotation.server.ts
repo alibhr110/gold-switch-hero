@@ -21,21 +21,27 @@ export function sellPriceOf(q: Quote | undefined, useBidAsk: boolean): number {
   return Number(q.last ?? q.ask ?? 0);
 }
 
-/** انحراف نسبت held/cand از میانگین متحرک آن؛ null اگر داده کافی نباشد. */
+/**
+ * انحراف نسبت held/cand از میانگین متحرک آن؛ null اگر داده کافی نباشد.
+ * سری‌ها نقشهٔ timestamp(ms)→price هستند و فقط روی تیک‌های زمانی مشترک
+ * (آخرین maWindow تیک مشترک) محاسبه انجام می‌شود تا هم‌ترازی زمانی تضمین شود.
+ */
 export function deviation(
-  seriesHeld: number[],
-  seriesCand: number[],
+  seriesHeld: Map<number, number>,
+  seriesCand: Map<number, number>,
   maWindow: number,
 ): number | null {
-  const n = Math.min(seriesHeld.length, seriesCand.length);
-  if (n < maWindow) return null;
-  const h = seriesHeld.slice(-maWindow);
-  const c = seriesCand.slice(-maWindow);
+  const common: number[] = [];
+  for (const t of seriesHeld.keys()) if (seriesCand.has(t)) common.push(t);
+  if (common.length < maWindow) return null;
+  common.sort((a, b) => a - b);
+  const window = common.slice(-maWindow);
   let sum = 0;
-  for (let i = 0; i < maWindow; i++) sum += h[i]! / c[i]!;
+  for (const t of window) sum += seriesHeld.get(t)! / seriesCand.get(t)!;
   const ma = sum / maWindow;
   if (!ma) return null;
-  const last = h[maWindow - 1]! / c[maWindow - 1]!;
+  const lastT = window[maWindow - 1]!;
+  const last = seriesHeld.get(lastT)! / seriesCand.get(lastT)!;
   return last / ma - 1;
 }
 
@@ -71,9 +77,31 @@ export async function runMultiRotation(
 
   let sampleAdded = false;
   if (shouldSample) {
-    const rows = funds
-      .map((f) => ({ symbol: f, t: nowIso, price: midPrice(quotes.get(f), useBidAsk) }))
-      .filter((r) => r.price != null);
+    // هم‌ترازی زمانی: برای هر صندوق در هر تیک یک ردیف ثبت می‌کنیم؛ اگر قیمت
+    // معتبر نداشت، از آخرین قیمت ثبت‌شده‌اش (Forward-Fill) استفاده می‌کنیم تا
+    // همهٔ صندوق‌ها در همهٔ تیک‌ها نمونه داشته باشند و سری‌ها هم‌طول بمانند.
+    const lastKnown = new Map<string, number>();
+    await Promise.all(
+      funds.map(async (f) => {
+        const { data } = await db
+          .from("fund_samples")
+          .select("price")
+          .eq("symbol", f)
+          .order("t", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) lastKnown.set(f, Number(data.price));
+      }),
+    );
+    const rows: { symbol: string; t: string; price: number }[] = [];
+    for (const f of funds) {
+      const live = midPrice(quotes.get(f), useBidAsk);
+      const price = live ?? lastKnown.get(f);
+      if (price != null) {
+        rows.push({ symbol: f, t: nowIso, price });
+        lastKnown.set(f, price);
+      }
+    }
     if (rows.length) {
       const { error } = await db.from("fund_samples").insert(rows);
       if (!error) sampleAdded = true;
@@ -82,7 +110,10 @@ export async function runMultiRotation(
 
   // سری قیمت هر صندوق برای محاسبه‌ی MA
   const maWindow: number = state.ma_window;
-  const series = new Map<string, number[]>();
+  // سری‌ها به‌صورت نقشهٔ timestamp→price نگه داشته می‌شوند تا انحراف فقط روی
+  // تیک‌های زمانی مشترک محاسبه شود (حذف خطای جابه‌جایی ایندکس بین صندوق‌ها).
+  const fetchLimit = maWindow * 3;
+  const series = new Map<string, Map<number, number>>();
   await Promise.all(
     funds.map(async (f) => {
       const { data } = await db
@@ -90,11 +121,10 @@ export async function runMultiRotation(
         .select("t, price")
         .eq("symbol", f)
         .order("t", { ascending: false })
-        .limit(maWindow);
-      series.set(
-        f,
-        (data ?? []).map((r: any) => Number(r.price)).reverse(),
-      );
+        .limit(fetchLimit);
+      const m = new Map<number, number>();
+      for (const r of data ?? []) m.set(new Date(r.t).getTime(), Number(r.price));
+      series.set(f, m);
     }),
   );
 
@@ -134,12 +164,12 @@ export async function runMultiRotation(
     }
   } else {
     // بررسی چرخش
-    const heldSeries = series.get(holding) ?? [];
+    const heldSeries = series.get(holding) ?? new Map<number, number>();
     let target: string | null = null;
     let maxDev = band;
     for (const cand of funds) {
       if (cand === holding) continue;
-      const d = deviation(heldSeries, series.get(cand) ?? [], maWindow);
+      const d = deviation(heldSeries, series.get(cand) ?? new Map<number, number>(), maWindow);
       if (d != null && d > maxDev) {
         maxDev = d;
         target = cand;
