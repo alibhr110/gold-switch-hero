@@ -21,21 +21,27 @@ export function sellPriceOf(q: Quote | undefined, useBidAsk: boolean): number {
   return Number(q.last ?? q.ask ?? 0);
 }
 
-/** انحراف نسبت held/cand از میانگین متحرک آن؛ null اگر داده کافی نباشد. */
+/**
+ * انحراف نسبت held/cand از میانگین متحرک آن؛ null اگر داده کافی نباشد.
+ * سری‌ها نقشهٔ timestamp(ms)→price هستند و فقط روی تیک‌های زمانی مشترک
+ * (آخرین maWindow تیک مشترک) محاسبه انجام می‌شود تا هم‌ترازی زمانی تضمین شود.
+ */
 export function deviation(
-  seriesHeld: number[],
-  seriesCand: number[],
+  seriesHeld: Map<number, number>,
+  seriesCand: Map<number, number>,
   maWindow: number,
 ): number | null {
-  const n = Math.min(seriesHeld.length, seriesCand.length);
-  if (n < maWindow) return null;
-  const h = seriesHeld.slice(-maWindow);
-  const c = seriesCand.slice(-maWindow);
+  const common: number[] = [];
+  for (const t of seriesHeld.keys()) if (seriesCand.has(t)) common.push(t);
+  if (common.length < maWindow) return null;
+  common.sort((a, b) => a - b);
+  const window = common.slice(-maWindow);
   let sum = 0;
-  for (let i = 0; i < maWindow; i++) sum += h[i]! / c[i]!;
+  for (const t of window) sum += seriesHeld.get(t)! / seriesCand.get(t)!;
   const ma = sum / maWindow;
   if (!ma) return null;
-  const last = h[maWindow - 1]! / c[maWindow - 1]!;
+  const lastT = window[maWindow - 1]!;
+  const last = seriesHeld.get(lastT)! / seriesCand.get(lastT)!;
   return last / ma - 1;
 }
 
