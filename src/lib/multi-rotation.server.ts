@@ -104,7 +104,10 @@ export async function runMultiRotation(
 
   // سری قیمت هر صندوق برای محاسبه‌ی MA
   const maWindow: number = state.ma_window;
-  const series = new Map<string, number[]>();
+  // سری‌ها به‌صورت نقشهٔ timestamp→price نگه داشته می‌شوند تا انحراف فقط روی
+  // تیک‌های زمانی مشترک محاسبه شود (حذف خطای جابه‌جایی ایندکس بین صندوق‌ها).
+  const fetchLimit = maWindow * 3;
+  const series = new Map<string, Map<number, number>>();
   await Promise.all(
     funds.map(async (f) => {
       const { data } = await db
@@ -112,11 +115,10 @@ export async function runMultiRotation(
         .select("t, price")
         .eq("symbol", f)
         .order("t", { ascending: false })
-        .limit(maWindow);
-      series.set(
-        f,
-        (data ?? []).map((r: any) => Number(r.price)).reverse(),
-      );
+        .limit(fetchLimit);
+      const m = new Map<number, number>();
+      for (const r of data ?? []) m.set(new Date(r.t).getTime(), Number(r.price));
+      series.set(f, m);
     }),
   );
 
