@@ -71,9 +71,31 @@ export async function runMultiRotation(
 
   let sampleAdded = false;
   if (shouldSample) {
-    const rows = funds
-      .map((f) => ({ symbol: f, t: nowIso, price: midPrice(quotes.get(f), useBidAsk) }))
-      .filter((r) => r.price != null);
+    // هم‌ترازی زمانی: برای هر صندوق در هر تیک یک ردیف ثبت می‌کنیم؛ اگر قیمت
+    // معتبر نداشت، از آخرین قیمت ثبت‌شده‌اش (Forward-Fill) استفاده می‌کنیم تا
+    // همهٔ صندوق‌ها در همهٔ تیک‌ها نمونه داشته باشند و سری‌ها هم‌طول بمانند.
+    const lastKnown = new Map<string, number>();
+    await Promise.all(
+      funds.map(async (f) => {
+        const { data } = await db
+          .from("fund_samples")
+          .select("price")
+          .eq("symbol", f)
+          .order("t", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) lastKnown.set(f, Number(data.price));
+      }),
+    );
+    const rows: { symbol: string; t: string; price: number }[] = [];
+    for (const f of funds) {
+      const live = midPrice(quotes.get(f), useBidAsk);
+      const price = live ?? lastKnown.get(f);
+      if (price != null) {
+        rows.push({ symbol: f, t: nowIso, price });
+        lastKnown.set(f, price);
+      }
+    }
     if (rows.length) {
       const { error } = await db.from("fund_samples").insert(rows);
       if (!error) sampleAdded = true;
