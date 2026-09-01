@@ -164,12 +164,12 @@ export async function runMultiRotation(
     }
   } else {
     // بررسی چرخش
-    const heldSeries = series.get(holding) ?? [];
+    const heldSeries = series.get(holding) ?? new Map<number, number>();
     let target: string | null = null;
     let maxDev = band;
     for (const cand of funds) {
       if (cand === holding) continue;
-      const d = deviation(heldSeries, series.get(cand) ?? [], maWindow);
+      const d = deviation(heldSeries, series.get(cand) ?? new Map<number, number>(), maWindow);
       if (d != null && d > maxDev) {
         maxDev = d;
         target = cand;
